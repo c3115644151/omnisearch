@@ -1,0 +1,93 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Client",
+      "presentation": {
+        "group": "Mod Development - MDK-1.21.1-ModDevGradle",
+        "order": 0
+      },
+      "projectName": "MDK-1.21.1-ModDevGradle",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\clientRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\clientRunVmArgs.txt",
+        "-Dfml.modFolders\u003domnisearch%%C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Data",
+      "presentation": {
+        "group": "Mod Development - MDK-1.21.1-ModDevGradle",
+        "order": 1
+      },
+      "projectName": "MDK-1.21.1-ModDevGradle",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\dataRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\dataRunVmArgs.txt",
+        "-Dfml.modFolders\u003domnisearch%%C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "GameTestServer",
+      "presentation": {
+        "group": "Mod Development - MDK-1.21.1-ModDevGradle",
+        "order": 2
+      },
+      "projectName": "MDK-1.21.1-ModDevGradle",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\gameTestServerRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\gameTestServerRunVmArgs.txt",
+        "-Dfml.modFolders\u003domnisearch%%C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    },
+    {
+      "type": "java",
+      "request": "launch",
+      "name": "Server",
+      "presentation": {
+        "group": "Mod Development - MDK-1.21.1-ModDevGradle",
+        "order": 3
+      },
+      "projectName": "MDK-1.21.1-ModDevGradle",
+      "mainClass": "net.neoforged.devlaunch.Main",
+      "args": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\serverRunProgramArgs.txt"
+      ],
+      "vmArgs": [
+        "@C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\build\\moddev\\serverRunVmArgs.txt",
+        "-Dfml.modFolders\u003domnisearch%%C:\\Users\\32800\\Desktop\\MDK-1.21.1-ModDevGradle\\bin\\main"
+      ],
+      "cwd": "${workspaceFolder}\\run",
+      "env": {},
+      "console": "internalConsole",
+      "shortenCommandLine": "none"
+    }
+  ]
+}

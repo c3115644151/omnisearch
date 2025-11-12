@@ -1,0 +1,39 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+run
+runs
+run-data
+
+repo
+
+# Log files
+*.log
+
+# macOS specific
+.DS_Store
+
+# TraeAI specific
+.trae/
+
+# BMAD specific
+.bmad-core/
+.bmad-godot-game-dev/
