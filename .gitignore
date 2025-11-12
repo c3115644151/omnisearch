@@ -13,6 +13,9 @@ out
 *.iml
 .idea
 
+# vscode
+.vscode/
+
 # gradle
 build
 .gradle
@@ -37,3 +40,6 @@ repo
 # BMAD specific
 .bmad-core/
 .bmad-godot-game-dev/
+
+# Personal notes
+omnisearch_mod_memory.md
