@@ -1,25 +1,36 @@
+[h1=Omnisearch是什么？]
 
-Installation information
-=======
+游玩大型整合包，往往意味着你的游戏旁总得开着一个浏览器窗口。查询合成配方、理解一个物品的运作、或是辨认一只生物的信息，都迫使你不得不通过切屏的方式中断你的沉浸感，去查阅外部的百科资料。
 
-This template repository can be directly cloned to get you started with a new
-mod. Simply create a new repository cloned from this one, by following the
-instructions provided by [GitHub](https://docs.github.com/en/repositories/creating-and-managing-repositories/creating-a-repository-from-a-template).
+Omnisearch 的设计就是为了从根本上解决这个问题。它是一款轻量级的客户端模组，将 MC百科 庞大的知识库无缝集成到了Minecraft客户端之中，让你无需离开游戏窗口即可搜索和阅读排版精美的百科文章，让你的注意力能始终停留在它本该在的地方。
 
-Once you have your clone, simply open the repository in the IDE of your choice. The usual recommendation for an IDE is either IntelliJ IDEA or Eclipse.
 
-If at any point you are missing libraries in your IDE, or you've run into problems you can
-run `gradlew --refresh-dependencies` to refresh the local cache. `gradlew clean` to reset everything 
-{this does not affect your code} and then start the process again.
 
-Mapping Names:
-============
-By default, the MDK is configured to use the official mapping names from Mojang for methods and fields 
-in the Minecraft codebase. These names are covered by a specific license. All modders should be aware of this
-license. For the latest license text, refer to the mapping file itself, or the reference copy here:
-https://github.com/NeoForged/NeoForm/blob/main/Mojang.md
+[h1=如何使用？]
 
-Additional Resources: 
-==========
-Community Documentation: https://docs.neoforged.net/  
-NeoForged Discord: https://discord.neoforged.net/
+将光标悬浮在物品上并长按 TAB 键，即可自动搜索该物品。
+你也可以在游戏中随时按下 TAB 键（可在键位设置中修改）来打开搜索界面，并手动输入你想了解的任何物品、方块或实体的名字。
+
+点击搜索结果列表中的任意条目查看其详细的百科页面。
+
+
+
+[h1=重要提示]
+
+[!] 请注意，Omnisearch 是一款全新的模组，目前处于实验性阶段。虽然功能可用，但你仍可能遇到一些Bug或渲染问题。
+
+[!] 如果你遇到任何问题，恳请在指定的 GitHub Issues 页面 进行反馈，你的每一条建议都至关重要！
+
+[!] 为了获得最佳的视觉体验，可以搭配 ModernUI 模组一同使用。
+
+你可以将 Omnisearch 添加进任何整合包中，无需特意向我获取授权。
+
+
+
+
+[h1=画廊]
+
+
+搜索“娜迦”关键词
+
+进入第二个条目

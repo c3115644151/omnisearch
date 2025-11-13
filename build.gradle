@@ -75,7 +75,7 @@ configurations {
 }
 
 dependencies {
-    implementation 'net.neoforged:neoforge:21.0.33-beta'
+    implementation "net.neoforged:neoforge:${neo_version}"
     implementation 'org.jsoup:jsoup:1.17.2'
     implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
     jarJar 'org.jsoup:jsoup:1.17.2'
@@ -100,6 +100,7 @@ var generateModMetadata = tasks.register("generateModMetadata", ProcessResources
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
             neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
             loader_version_range   : loader_version_range,
             mod_id                 : mod_id,
             mod_name               : mod_name,

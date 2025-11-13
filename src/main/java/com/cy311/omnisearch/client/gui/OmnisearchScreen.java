@@ -44,6 +44,9 @@ public class OmnisearchScreen extends Screen {
     private double dragStartMouseY = -1;
     private double dragStartScrollOffset = -1;
 
+    private String initialSearchTerm = null;
+    private final Screen parentScreen;
+
     // Static fields for persistence
     private static ItemData lastSearchResult;
     private static List<SearchResult> lastSearchResults;
@@ -54,7 +57,17 @@ public class OmnisearchScreen extends Screen {
      * Constructs a new OmnisearchScreen.
      */
     public OmnisearchScreen() {
+        this(null, null);
+    }
+
+    public OmnisearchScreen(String initialSearchTerm) {
+        this(null, initialSearchTerm);
+    }
+
+    public OmnisearchScreen(Screen parent, String initialSearchTerm) {
         super(Component.literal("Omnisearch"));
+        this.parentScreen = parent;
+        this.initialSearchTerm = initialSearchTerm;
     }
 
     /**
@@ -68,8 +81,12 @@ public class OmnisearchScreen extends Screen {
         wasViewingDetails = this.isViewingDetails;
         lastScrollOffset = this.scrollOffset;
 
-        this.isClosing = true;
-        this.animationStartTime = System.currentTimeMillis();
+        if (this.parentScreen != null) {
+            this.minecraft.setScreen(this.parentScreen);
+        } else {
+            this.isClosing = true;
+            this.animationStartTime = System.currentTimeMillis();
+        }
     }
 
     @Override
@@ -116,6 +133,12 @@ public class OmnisearchScreen extends Screen {
 
             restoreState();
             this.animationStartTime = System.currentTimeMillis();
+
+            if (this.initialSearchTerm != null && !this.initialSearchTerm.isEmpty()) {
+                this.searchBox.setValue(this.initialSearchTerm);
+                performSearch(this.initialSearchTerm);
+                this.initialSearchTerm = null; // Consume the initial search term
+            }
 
             // When resizing, we need to re-calculate content height based on new width
             if (isViewingDetails && searchResult != null) {
@@ -403,7 +426,15 @@ public class OmnisearchScreen extends Screen {
 
     @Override
     public void render(GuiGraphics pGuiGraphics, int pMouseX, int pMouseY, float pPartialTick) {
-        long elapsedTime = System.currentTimeMillis() - this.animationStartTime;
+        if (this.parentScreen != null) {
+            this.parentScreen.render(pGuiGraphics, -1, -1, pPartialTick);
+            pGuiGraphics.fill(0, 0, this.width, this.height, 0x80000000); // Darken the background
+        } else {
+            this.renderBackground(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
+        }
+
+        long currentTime = System.currentTimeMillis();
+        long elapsedTime = currentTime - animationStartTime;
         float progress = Math.min((float)elapsedTime / ANIMATION_DURATION, 1.0f);
 
         if (this.isClosing) {
