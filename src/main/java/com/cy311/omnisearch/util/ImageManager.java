@@ -58,7 +58,7 @@ public class ImageManager {
                         for (int y = 0; y < bufferedImage.getHeight(); y++) {
                             for (int x = 0; x < bufferedImage.getWidth(); x++) {
                                 int rgb = bufferedImage.getRGB(x, y);
-                                nativeImage.setPixelRGBA(x, y, rgb);
+                                nativeImage.setPixel(x, y, rgb);
                             }
                         }
 

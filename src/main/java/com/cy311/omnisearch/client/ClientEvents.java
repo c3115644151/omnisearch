@@ -36,7 +36,7 @@ public class ClientEvents {
         public static void onKeyInput(InputEvent.Key event) {
             try {
                 if (KeyBinds.openOmnisearch.consumeClick()) {
-                    Minecraft.getInstance().tell(() -> {
+                    Minecraft.getInstance().execute(() -> {
                         Screen parent = Minecraft.getInstance().screen;
                         Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, null));
                     });
@@ -70,7 +70,7 @@ public class ClientEvents {
                         if (!hasPrintedForItem) {
                             String itemName = event.getItemStack().getHoverName().getString();
                             Screen parent = Minecraft.getInstance().screen;
-                            Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, itemName));
+                            Minecraft.getInstance().execute(() -> Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, itemName)));
                             hasPrintedForItem = true;
                         }
                     } else {

@@ -24,10 +24,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 neoForge {
     version = project.neo_version
 
-    parchment {
-        mappingsVersion = project.parchment_mappings_version
-        minecraftVersion = project.parchment_minecraft_version
-    }
+    // Disable Parchment for 1.21.2 migration until a valid mapping release is targeted
 
     runs {
         client {

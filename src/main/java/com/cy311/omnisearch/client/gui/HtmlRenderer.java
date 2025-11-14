@@ -197,9 +197,9 @@ public class HtmlRenderer {
             GuiGraphics g = ctx.g;
             int partY = currentY + (int)((line.height - imagePart.imageHeight) / 2f);
             if (imagePart.isSprite) {
-                g.blitSprite(imagePart.location, currentX, partY, imagePart.imageWidth, imagePart.imageHeight);
+                g.blitSprite(net.minecraft.client.renderer.RenderType::guiTextured, imagePart.location, currentX, partY, imagePart.imageWidth, imagePart.imageHeight);
             } else if (imagePart.location != null) {
-                g.blit(imagePart.location, currentX, partY, 0, 0, imagePart.imageWidth, imagePart.imageHeight, imagePart.imageWidth, imagePart.imageHeight);
+                g.blit(net.minecraft.client.renderer.RenderType::guiTextured, imagePart.location, currentX, partY, 0f, 0f, imagePart.imageWidth, imagePart.imageHeight, imagePart.imageWidth, imagePart.imageHeight);
             }
             return currentX + imagePart.width;
         }
