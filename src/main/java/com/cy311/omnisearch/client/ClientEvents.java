@@ -8,6 +8,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -36,7 +37,8 @@ public class ClientEvents {
             try {
                 if (KeyBinds.openOmnisearch.consumeClick()) {
                     Minecraft.getInstance().tell(() -> {
-                        Minecraft.getInstance().setScreen(new OmnisearchScreen());
+                        Screen parent = Minecraft.getInstance().screen;
+                        Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, null));
                     });
                 }
             } catch (Throwable t) {
@@ -67,7 +69,8 @@ public class ClientEvents {
                     if (holdTime >= 1000) {
                         if (!hasPrintedForItem) {
                             String itemName = event.getItemStack().getHoverName().getString();
-                            Minecraft.getInstance().setScreen(new OmnisearchScreen(itemName));
+                            Screen parent = Minecraft.getInstance().screen;
+                            Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, itemName));
                             hasPrintedForItem = true;
                         }
                     } else {

@@ -8,7 +8,7 @@ import org.lwjgl.glfw.GLFW;
 public class KeyBinds {
     public static final KeyMapping openOmnisearch = new KeyMapping(
             "Omnisearch",
-            KeyConflictContext.IN_GAME,
+            KeyConflictContext.UNIVERSAL,
             InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_TAB,
             "Omnisearch"

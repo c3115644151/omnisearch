@@ -463,35 +463,42 @@ public class OmnisearchScreen extends Screen {
      * @param pPartialTick The partial tick time.
      */
     private void renderUI(GuiGraphics pGuiGraphics, int pMouseX, int pMouseY, float pPartialTick) {
-        ModernUI.renderPanel(pGuiGraphics, this.panelX, this.panelY, this.panelWidth, this.panelHeight, this.title.getString(), this.font);
+        ModernUI.UIContext ctx = new ModernUI.UIContext(pGuiGraphics, this.font, this.panelX, this.panelY, this.panelWidth, this.panelHeight, pMouseX, pMouseY, this.scrollOffset);
+        ModernUI.renderPanel(ctx, this.title.getString());
 
         if (this.isViewingDetails) {
             this.backButton.setBounds(this.panelX + 15, this.panelY + 10, this.font.width(this.backButton.getText()), this.font.lineHeight);
-            ModernUI.renderClickable(pGuiGraphics, this.font, this.backButton, pMouseX, pMouseY);
+            ModernUI.renderClickable(ctx, this.backButton);
         }
 
         if (this.isLoading) {
-            ModernUI.renderLoading(pGuiGraphics, this.font, this.panelX, this.panelWidth, this.panelY, this.panelHeight);
+            ModernUI.renderLoading(ctx);
         } else if (this.noResults) {
-            ModernUI.renderNoResults(pGuiGraphics, this.font, this.panelX, this.panelWidth, this.panelY, this.panelHeight);
+            ModernUI.renderNoResults(ctx);
         } else if (this.searchResults != null && this.clickableResults != null && !this.isViewingDetails) {
             this.contentHeight = 0;
             for (ClickableEntry clickable : this.clickableResults) {
                 this.contentHeight += clickable.getHeight() + 5; // 5 for padding
             }
-            ModernUI.renderSearchResults(pGuiGraphics, this.font, this.panelX, this.panelY, this.panelWidth, this.panelHeight, this.clickableResults, this.scrollOffset, pMouseX, pMouseY);
+            ModernUI.renderSearchResults(ctx, this.clickableResults);
         } else if (this.searchResult != null && this.isViewingDetails) {
-            ModernUI.renderItemDetails(pGuiGraphics, this.font, this.panelX, this.panelY, this.panelWidth, this.panelHeight, this.searchResult, this.htmlRenderer, this.scrollOffset, pMouseX, pMouseY, this.urlEntry);
+            ModernUI.renderItemDetails(ctx, this.searchResult, this.htmlRenderer, this.urlEntry);
         }
 
         // Update search box position
         this.searchBox.setX(this.panelX + 15);
         this.searchBox.setY(this.panelY + this.panelHeight - this.searchBox.getHeight() - 10);
 
-        // Render the search box background
-        ModernUI.renderSearchBox(pGuiGraphics, this.searchBox.getX() - 2, this.searchBox.getY() - 2, this.searchBox.getWidth() + 4, this.searchBox.getHeight() + 4);
+        ModernUI.renderSearchBox(ctx, this.searchBox.getX() - 2, this.searchBox.getY() - 2, this.searchBox.getWidth() + 4, this.searchBox.getHeight() + 4);
+        if (this.searchBox.isFocused()) {
+            int gx0 = this.searchBox.getX() - 2;
+            int gy0 = this.searchBox.getY() - 2;
+            int gx1 = this.searchBox.getX() + this.searchBox.getWidth() + 2;
+            int gy1 = this.searchBox.getY() + this.searchBox.getHeight() + 2;
+            ctx.g.fill(gx0, gy0, gx1, gy1, 0x332C98F0);
+        }
 
-        // Render the search box
+        // Render the search box text
         this.searchBox.render(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
 
         // Render scrollbar
@@ -527,9 +534,7 @@ public class OmnisearchScreen extends Screen {
             int scrollbarHeight = this.panelHeight - 60;
             int maxScroll = Math.max(0, this.contentHeight - scrollbarHeight);
 
-            if (this.isDragging) {
-                pGuiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, 0x80000000);
-            }
+            pGuiGraphics.fill(scrollbarX, scrollbarY, scrollbarX + scrollbarWidth, scrollbarY + scrollbarHeight, 0x26202225);
 
             int thumbHeight = Math.max(30, (int) ((double)scrollbarHeight / this.contentHeight * scrollbarHeight));
             int thumbY = scrollbarY;
@@ -538,9 +543,10 @@ public class OmnisearchScreen extends Screen {
             }
 
             boolean isMouseOverScrollbar = pMouseX >= scrollbarX && pMouseX <= scrollbarX + scrollbarWidth && pMouseY >= scrollbarY && pMouseY <= scrollbarY + scrollbarHeight;
-            int thumbColor = (this.isDragging || isMouseOverScrollbar) ? 0xFFCCCCCC : 0xFF888888;
-
+            int thumbColor = (this.isDragging || isMouseOverScrollbar) ? 0xFFB6C2FF : 0xFF9499A3;
             pGuiGraphics.fill(scrollbarX, thumbY, scrollbarX + scrollbarWidth, thumbY + thumbHeight, thumbColor);
+            pGuiGraphics.hLine(scrollbarX, scrollbarX + scrollbarWidth - 1, thumbY, 0x40202225);
+            pGuiGraphics.hLine(scrollbarX, scrollbarX + scrollbarWidth - 1, thumbY + thumbHeight - 1, 0x40202225);
         }
     }
 

@@ -59,22 +59,33 @@ public class McmodFetcher {
         String encodedItemName = URLEncoder.encode(itemName, StandardCharsets.UTF_8);
         String searchUrl = String.format(SEARCH_URL_TEMPLATE, encodedItemName);
 
-
-        Document searchPage = Jsoup.connect(searchUrl).get();
-
-
-
-        // 否则，从搜索结果列表中找到所有匹配的链接
-        Elements results = searchPage.select(".search-result-list .result-item .head a[href*='/item/']");
-
-        if (results.isEmpty()) {
-            return null; // 没有找到结果
+        Document searchPage = fetchSearchPage(searchUrl);
+        List<Element> links = queryItemLinks(searchPage);
+        if (links.isEmpty()) {
+            return null;
         }
+        List<Element> ordered = prioritizeResults(itemName, links);
+        List<SearchResult> candidates = ordered.stream()
+                .map(McmodFetcher::toSearchResult)
+                .collect(Collectors.toList());
+        return FetchResult.withSearchResults(candidates);
+    }
 
-        // 区分精确匹配和广泛匹配
+    private static Document fetchSearchPage(String searchUrl) throws IOException {
+        return Jsoup.connect(searchUrl)
+                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+                .timeout(5000)
+                .get();
+    }
+
+    private static List<Element> queryItemLinks(Document searchPage) {
+        Elements results = searchPage.select(".search-result-list .result-item .head a[href*='/item/']");
+        return new ArrayList<>(results);
+    }
+
+    private static List<Element> prioritizeResults(String itemName, List<Element> results) {
         List<Element> exactMatches = new ArrayList<>();
         List<Element> broadMatches = new ArrayList<>();
-
         for (Element result : results) {
             String resultName = extractItemName(result.text());
             if (itemName.equalsIgnoreCase(resultName)) {
@@ -83,35 +94,20 @@ public class McmodFetcher {
                 broadMatches.add(result);
             }
         }
-
-
-        // 合并列表，精确匹配的在前
-        List<Element> combinedResults = new ArrayList<>(exactMatches);
-        combinedResults.addAll(broadMatches);
-
-        if (combinedResults.isEmpty()) {
-            return null; // 理论上不会发生，因为上面已经判断过 results.isEmpty()
-        }
-
-        if (combinedResults.size() == 1) {
-            ItemData itemData = parseItemDetails(combinedResults.get(0).absUrl("href"));
-            return FetchResult.withItemData(itemData);
-        }
-
-        // 有多个结果，返回一个 SearchResult 列表
-        List<SearchResult> searchResults = combinedResults.stream()
-                .map(element -> {
-                    String linkText = element.text();
-                    String resultItemName = extractItemName(linkText);
-                    String modName = extractModName(linkText);
-                    String url = element.absUrl("href");
-                    return new SearchResult(resultItemName, modName, url);
-                })
-                .collect(Collectors.toList());
-        return FetchResult.withSearchResults(searchResults);
+        List<Element> combined = new ArrayList<>(exactMatches);
+        combined.addAll(broadMatches);
+        return combined;
     }
 
-    private static String extractItemName(String linkText) {
+    private static SearchResult toSearchResult(Element element) {
+        String linkText = element.text();
+        String resultItemName = extractItemName(linkText);
+        String modName = extractModName(linkText);
+        String url = element.absUrl("href");
+        return new SearchResult(resultItemName, modName, url);
+    }
+
+    static String extractItemName(String linkText) {
         // 披萨 (Pizza) - 甜蜜与魔法 (SweetMagic)
         // 披萨
         // (Pizza)
@@ -122,18 +118,16 @@ public class McmodFetcher {
         return name;
     }
 
-    private static String extractModName(String linkText) {
-        if (linkText.contains(" - ")) {
-            String modPart = linkText.substring(linkText.indexOf(" - ") + 3).trim();
-            if (modPart.startsWith("(")) {
-                modPart = modPart.substring(1);
-            }
-            if (modPart.endsWith(")")) {
-                modPart = modPart.substring(0, modPart.length() - 1);
-            }
-            return modPart;
+    static String extractModName(String linkText) {
+        if (!linkText.contains(" - ")) {
+            return "vanilla_or_unknown";
         }
-        return "vanilla_or_unknown";
+        String modPart = linkText.substring(linkText.indexOf(" - ") + 3).trim();
+        boolean wrapped = modPart.startsWith("(") && modPart.endsWith(")");
+        if (wrapped && modPart.length() >= 2) {
+            return modPart.substring(1, modPart.length() - 1);
+        }
+        return modPart;
     }
 
     private static ItemData parseItemDetails(String itemUrl) throws IOException {
