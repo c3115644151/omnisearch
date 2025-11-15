@@ -72,11 +72,22 @@ configurations {
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
     implementation 'org.jsoup:jsoup:1.17.2'
+    implementation 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
+    implementation 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
+    implementation 'com.twelvemonkeys.common:common-image:3.12.0'
+    implementation 'com.twelvemonkeys.common:common-io:3.12.0'
+    implementation 'com.twelvemonkeys.common:common-lang:3.12.0'
     implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
     jarJar 'org.jsoup:jsoup:1.17.2'
+    // Shade TwelveMonkeys full stack to ensure SPI classes存在
+    jarJar 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
+    jarJar 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
+    jarJar 'com.twelvemonkeys.common:common-image:3.12.0'
+    jarJar 'com.twelvemonkeys.common:common-io:3.12.0'
+    jarJar 'com.twelvemonkeys.common:common-lang:3.12.0'
     jarJar 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
 }
 
