@@ -16,6 +16,32 @@ public final class RenderCompat {
         }
     }
 
+    private static java.util.function.Function<net.minecraft.resources.ResourceLocation, Object> getGuiTexturedFactory() {
+        try {
+            Class<?> rt = Class.forName("net.minecraft.client.renderer.RenderType");
+            Method m;
+            try {
+                m = rt.getMethod("guiTextured", net.minecraft.resources.ResourceLocation.class);
+            } catch (Throwable ignored) {
+                try {
+                    m = rt.getMethod("textured", net.minecraft.resources.ResourceLocation.class);
+                } catch (Throwable ignored2) {
+                    m = rt.getMethod("text", net.minecraft.resources.ResourceLocation.class);
+                }
+            }
+            final Method fm = m;
+            return loc -> {
+                try {
+                    return fm.invoke(null, loc);
+                } catch (Throwable ignored) {
+                    return null;
+                }
+            };
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
     private static boolean invokeNoArg(Object target, String name) {
         return invoke(target, name, new Class<?>[]{}, new Object[]{});
     }
@@ -64,7 +90,17 @@ public final class RenderCompat {
         } catch (Throwable ignored) {
         }
         try {
-            g.blit((net.minecraft.resources.ResourceLocation) location, x, y, 0, 0, w, h, w, h);
+            java.util.function.Function<net.minecraft.resources.ResourceLocation, Object> fn = getGuiTexturedFactory();
+            if (fn != null) {
+                g.getClass().getMethod("blitSprite", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class, int.class, int.class, int.class, int.class)
+                        .invoke(g, fn, (net.minecraft.resources.ResourceLocation) location, x, y, w, h);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            g.getClass().getMethod("blit", net.minecraft.resources.ResourceLocation.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class)
+                    .invoke(g, (net.minecraft.resources.ResourceLocation) location, x, y, 0, 0, w, h, w, h);
         } catch (Throwable ignored) {
         }
     }
@@ -81,7 +117,24 @@ public final class RenderCompat {
             return;
         } catch (Throwable ignored) {}
         try {
-            g.blit(location, x, y, 0, 0, drawW, drawH, drawW, drawH);
+            java.util.function.Function<net.minecraft.resources.ResourceLocation, Object> fn = getGuiTexturedFactory();
+            if (fn != null) {
+                try {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, int.class, int.class, float.class, float.class, float.class, float.class, int.class)
+                        .invoke(g, fn, location, x, y, drawW, drawH, 0.0f, 1.0f, 0.0f, 1.0f, -1);
+                    return;
+                } catch (Throwable ignoredInner) {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, int.class, int.class, float.class, float.class, float.class, float.class)
+                        .invoke(g, fn, location, x, y, drawW, drawH, 0.0f, 1.0f, 0.0f, 1.0f);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            g.getClass().getMethod("blit", net.minecraft.resources.ResourceLocation.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class)
+                .invoke(g, location, x, y, 0, 0, drawW, drawH, drawW, drawH);
         } catch (Throwable ignored) {}
     }
 
@@ -97,7 +150,24 @@ public final class RenderCompat {
             return;
         } catch (Throwable ignored) {}
         try {
-            g.blit(location, x, y, u, v, drawW, drawH, texW, texH);
+            java.util.function.Function<net.minecraft.resources.ResourceLocation, Object> fn = getGuiTexturedFactory();
+            if (fn != null) {
+                try {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, float.class, float.class, int.class, int.class, int.class, int.class, int.class)
+                        .invoke(g, fn, location, x, y, (float)u, (float)v, drawW, drawH, texW, texH, -1);
+                    return;
+                } catch (Throwable ignoredInner) {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, float.class, float.class, int.class, int.class, int.class, int.class)
+                        .invoke(g, fn, location, x, y, (float)u, (float)v, drawW, drawH, texW, texH);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            g.getClass().getMethod("blit", net.minecraft.resources.ResourceLocation.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class)
+                .invoke(g, location, x, y, u, v, drawW, drawH, texW, texH);
         } catch (Throwable ignored) {}
     }
 
@@ -113,7 +183,24 @@ public final class RenderCompat {
             return;
         } catch (Throwable ignored) {}
         try {
-            g.blit(location, x, y, 0, 0, drawW, drawH, drawW, drawH);
+            java.util.function.Function<net.minecraft.resources.ResourceLocation, Object> fn = getGuiTexturedFactory();
+            if (fn != null) {
+                try {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, int.class, int.class, float.class, float.class, float.class, float.class, int.class)
+                        .invoke(g, fn, location, x, y, drawW, drawH, 0.0f, 1.0f, 0.0f, 1.0f, -1);
+                    return;
+                } catch (Throwable ignoredInner) {
+                    g.getClass().getMethod("blit", java.util.function.Function.class, net.minecraft.resources.ResourceLocation.class,
+                            int.class, int.class, int.class, int.class, float.class, float.class, float.class, float.class)
+                        .invoke(g, fn, location, x, y, drawW, drawH, 0.0f, 1.0f, 0.0f, 1.0f);
+                    return;
+                }
+            }
+        } catch (Throwable ignored) {}
+        try {
+            g.getClass().getMethod("blit", net.minecraft.resources.ResourceLocation.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class)
+                .invoke(g, location, x, y, 0, 0, drawW, drawH, drawW, drawH);
         } catch (Throwable ignored) {}
     }
 }

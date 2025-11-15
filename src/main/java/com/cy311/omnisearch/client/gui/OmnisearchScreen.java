@@ -500,10 +500,6 @@ public class OmnisearchScreen extends Screen {
 
     @Override
     public void render(GuiGraphics pGuiGraphics, int pMouseX, int pMouseY, float pPartialTick) {
-        if (this.parentScreen != null) {
-            this.parentScreen.render(pGuiGraphics, -1, -1, pPartialTick);
-        }
-        pGuiGraphics.fill(0, 0, this.width, this.height, 0x80000000);
 
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - animationStartTime;
@@ -532,6 +528,11 @@ public class OmnisearchScreen extends Screen {
             this.pendingSubmit = false;
             submitSearch();
         }
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        
     }
 
     /**
@@ -635,4 +636,6 @@ public class OmnisearchScreen extends Screen {
     public boolean isPauseScreen() {
         return false;
     }
+
+    
 }
