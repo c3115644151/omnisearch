@@ -140,3 +140,10 @@ idea {
         downloadJavadoc = true
     }
 }
+
+// 自定义打包产物文件名，追加 -1.21.10 后缀
+tasks.named('jar').configure {
+    def baseName = project.base.archivesName.get()
+    def ver = project.version
+    archiveFileName = "${baseName}-${ver}-1.21.10.jar"
+}

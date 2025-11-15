@@ -96,7 +96,21 @@ public class ImageManager {
                                         throw new RuntimeException(e2);
                                     }
                                 }
-                                Minecraft.getInstance().getTextureManager().register(location, texture);
+                                try {
+                                    // 优先调用常规注册
+                                    Minecraft.getInstance().getTextureManager().register(location, texture);
+                                } catch (Throwable tReg) {
+                                    try {
+                                        // 跨版本备用：某些版本仅提供 registerForReload
+                                        Minecraft.getInstance().getTextureManager().getClass()
+                                                .getMethod("registerForReload", net.minecraft.resources.ResourceLocation.class, net.minecraft.client.renderer.texture.AbstractTexture.class)
+                                                .invoke(Minecraft.getInstance().getTextureManager(), location, texture);
+                                    } catch (Throwable ignored) {}
+                                }
+                                try {
+                                    // 跨版本稳健：主动上传像素，避免某些版本未自动上传导致不显示
+                                    DynamicTexture.class.getMethod("upload").invoke(texture);
+                                } catch (Throwable ignored) {}
                                 textureCache.put(url, location);
                                 textureSizeCache.put(url, new int[]{bufferedImage.getWidth(), bufferedImage.getHeight()});
                                 downloading.remove(url);
