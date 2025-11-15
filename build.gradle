@@ -24,13 +24,13 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 neoForge {
     version = project.neo_version
 
-    runs {
-        client {
-            client()
-            jvmArgument "-Xmx4G"
-            jvmArgument "-Dfile.encoding=UTF-8"
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-        }
+        runs {
+            client {
+                client()
+                jvmArgument "-Xmx4G"
+                jvmArgument "-Dfile.encoding=UTF-8"
+                systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            }
 
         server {
             server()
@@ -50,11 +50,11 @@ neoForge {
             programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
         }
 
-        configureEach {
-            systemProperty 'forge.logging.markers', 'REGISTRIES'
-            logLevel = org.slf4j.event.Level.DEBUG
+            configureEach {
+                systemProperty 'forge.logging.markers', 'REGISTRIES'
+                logLevel = org.slf4j.event.Level.DEBUG
+            }
         }
-    }
 
     mods {
         "${mod_id}" {
@@ -72,24 +72,34 @@ configurations {
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
     implementation 'org.jsoup:jsoup:1.17.2'
+    runtimeOnly 'org.jsoup:jsoup:1.17.2'
     implementation 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
     implementation 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
     implementation 'com.twelvemonkeys.common:common-image:3.12.0'
     implementation 'com.twelvemonkeys.common:common-io:3.12.0'
     implementation 'com.twelvemonkeys.common:common-lang:3.12.0'
     implementation 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.common:common-image:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.common:common-io:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.common:common-lang:3.12.0'
+    runtimeOnly 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
-    jarJar 'org.jsoup:jsoup:1.17.2'
-    // Shade TwelveMonkeys full stack to ensure SPI classes存在
-    jarJar 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
-    jarJar 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
-    jarJar 'com.twelvemonkeys.common:common-image:3.12.0'
-    jarJar 'com.twelvemonkeys.common:common-io:3.12.0'
-    jarJar 'com.twelvemonkeys.common:common-lang:3.12.0'
-    jarJar 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
+    // 生产环境不打入第三方库，保持轻量；dev 运行通过 localRuntime 提供类路径
+
+    // dev 运行使用本地类路径，需确保依赖在 localRuntime
+    localRuntime 'org.jsoup:jsoup:1.17.2'
+    localRuntime 'com.twelvemonkeys.imageio:imageio-core:3.12.0'
+    localRuntime 'com.twelvemonkeys.imageio:imageio-metadata:3.12.0'
+    localRuntime 'com.twelvemonkeys.common:common-image:3.12.0'
+    localRuntime 'com.twelvemonkeys.common:common-io:3.12.0'
+    localRuntime 'com.twelvemonkeys.common:common-lang:3.12.0'
+    localRuntime 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
 }
+
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
     filteringCharset = 'UTF-8'
@@ -156,5 +166,6 @@ idea {
 tasks.named('jar').configure {
     def baseName = project.base.archivesName.get()
     def ver = project.version
-    archiveFileName = "${baseName}-${ver}-1.21.10.jar"
+    def mcVer = project.minecraft_version
+    archiveFileName = "${baseName}-${ver}-${mcVer}.jar"
 }

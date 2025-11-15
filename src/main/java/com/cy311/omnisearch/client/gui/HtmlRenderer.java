@@ -453,6 +453,8 @@ public class HtmlRenderer {
         elementHandlers.put("li", (element, base, width) -> { handleLiStart(width); return null; });
     }
 
+    private String currentBaseUrl = "https://www.mcmod.cn/";
+
     public int prepare(String htmlContent, int width, String baseUrl) {
         this.renderableLines.clear();
         this.totalHeight = 0;
@@ -464,8 +466,15 @@ public class HtmlRenderer {
         this.widthCache.clear();
         this.layout.clear();
 
-
-        Document doc = Jsoup.parse(htmlContent, baseUrl);
+        this.currentBaseUrl = baseUrl != null ? baseUrl : this.currentBaseUrl;
+        Document doc;
+        try {
+            doc = Jsoup.parse(htmlContent, baseUrl);
+        } catch (Throwable t) {
+            // 无 Jsoup 时的简单降级：按段落和换行渲染纯文本，并处理基础图片标签
+            simplePrepareWithoutJsoup(htmlContent, width, baseUrl);
+            return this.totalHeight;
+        }
 
         // 过滤掉不需要的元素（去重）
         doc.select(".common-text-menu, .uknowtoomuch").remove();
@@ -478,6 +487,44 @@ public class HtmlRenderer {
         }
 
         return this.totalHeight;
+    }
+
+    private void simplePrepareWithoutJsoup(String htmlContent, int width, String baseUrl) {
+        String normalized = htmlContent
+                .replace("\r", "")
+                .replace("<br>", "\n").replace("<br/>", "\n").replace("<br />", "\n")
+                .replace("</p>", "\n\n");
+        java.util.regex.Matcher im = java.util.regex.Pattern.compile("<img[^>]*src=\\\"([^\\\"]+)\\\"[^>]*>", java.util.regex.Pattern.CASE_INSENSITIVE).matcher(normalized);
+        int last = 0;
+        while (im.find()) {
+            String before = normalized.substring(last, im.start());
+            addPlainTextLines(before);
+            String src = im.group(1);
+            try {
+                int targetW = Math.max(24, (int)(48 * getImageScaleFactor()));
+                int targetH = targetW; // 简化按正方形比例显示
+                addImage(src, targetW, targetH);
+            } catch (Throwable ignored) {
+                addPlainTextLines(src);
+            }
+            last = im.end();
+        }
+        if (last < normalized.length()) {
+            addPlainTextLines(normalized.substring(last));
+        }
+        if (!currentLine.parts.isEmpty()) addLine(currentLine);
+    }
+
+    private void addPlainTextLines(String text) {
+        String plain = text.replaceAll("<[^>]+>", "").trim();
+        if (plain.isEmpty()) return;
+        String[] lines = plain.split("\n+");
+        for (String ln : lines) {
+            if (ln.isBlank()) continue;
+            addText(ln, styleStack.peek());
+            addLine(currentLine);
+            this.currentLine = new RenderableLine(font);
+        }
     }
 
    public void render(GuiGraphics guiGraphics, int x, int y, int viewportTop, int viewportBottom) {
@@ -540,26 +587,24 @@ public class HtmlRenderer {
             startNewLine(false);
         }
 
-        ResourceLocation cachedTexture = textureCache.get(src);
         int[] size0 = com.cy311.omnisearch.util.ImageManager.getTextureSize(src);
         int texW = size0 != null ? Math.max(1, size0[0]) : Math.max(1, (int)(width / getImageScaleFactor()));
         int texH = size0 != null ? Math.max(1, size0[1]) : Math.max(1, (int)(height / getImageScaleFactor()));
-        ImagePart imagePart = new ImagePart(src, width, height, texW, texH, cachedTexture);
-        this.currentLine.addPart(imagePart);
-        this.currentX += width * scale;
-
-        // If texture was not in cache, load it
-        if (cachedTexture == null) {
-            ImageManager.getTexture(src, (newTexture) -> {
-                imagePart.location = newTexture;
+        java.util.concurrent.atomic.AtomicReference<ImagePart> ref = new java.util.concurrent.atomic.AtomicReference<>();
+        ResourceLocation initialTex = com.cy311.omnisearch.util.ImageManager.getTexture(src, this.currentBaseUrl, (newTexture) -> {
+            ImagePart p = ref.get();
+            if (p != null) {
+                p.location = newTexture;
                 textureCache.put(src, newTexture);
                 int[] s = com.cy311.omnisearch.util.ImageManager.getTextureSize(src);
-                if (s != null) { imagePart.texWidth = Math.max(1, s[0]); imagePart.texHeight = Math.max(1, s[1]); }
-                if (onUpdate != null) {
-                    onUpdate.run();
-                }
-            });
-        }
+                if (s != null) { p.texWidth = Math.max(1, s[0]); p.texHeight = Math.max(1, s[1]); }
+                if (onUpdate != null) { onUpdate.run(); }
+            }
+        });
+        ImagePart imagePart = new ImagePart(src, width, height, texW, texH, initialTex);
+        ref.set(imagePart);
+        this.currentLine.addPart(imagePart);
+        this.currentX += width * scale;
     }
 
     private static class ImagePart extends RenderablePart {

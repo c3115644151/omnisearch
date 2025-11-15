@@ -60,10 +60,20 @@ public class ClientEvents {
         public static void onItemTooltip(ItemTooltipEvent event) {
             if (event.getItemStack().isEmpty()) return;
 
-            boolean isTabKeyDown = false;
+            boolean isTabKeyDown;
             try {
-                com.mojang.blaze3d.platform.Window win = Minecraft.getInstance().getWindow();
-                isTabKeyDown = InputConstants.isKeyDown(win, GLFW.GLFW_KEY_TAB);
+                Object winObj = Minecraft.getInstance().getWindow();
+                long handle = 0L;
+                try {
+                    handle = (long) winObj.getClass().getMethod("handle").invoke(winObj);
+                } catch (Throwable e1) {
+                    try {
+                        handle = (long) winObj.getClass().getMethod("getWindow").invoke(winObj);
+                    } catch (Throwable e2) {
+                        throw e2;
+                    }
+                }
+                isTabKeyDown = org.lwjgl.glfw.GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_TAB) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
             } catch (Throwable ignored) {
                 isTabKeyDown = KeyBinds.openOmnisearch.isDown();
             }

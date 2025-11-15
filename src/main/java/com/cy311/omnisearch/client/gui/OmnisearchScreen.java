@@ -115,7 +115,8 @@ public class OmnisearchScreen extends Screen {
             this.searchButton = net.minecraft.client.gui.components.Button.builder(Component.literal("搜索"), b -> submitSearch())
                     .bounds(searchBoxX + editWidth + spacing, searchBoxY, buttonWidth, searchBoxHeight)
                     .build();
-            this.htmlRenderer = new HtmlRenderer(this::updateContentHeight);
+            // 延迟创建 HtmlRenderer，避免在运行环境缺失解析库时导致初始化阶段崩溃
+            this.htmlRenderer = null;
             this.backButton = new ClickableEntry("< 返回", () -> {
                 this.isViewingDetails = false;
                 this.searchResult = null;
@@ -149,8 +150,11 @@ public class OmnisearchScreen extends Screen {
 
             // When resizing, we need to re-calculate content height based on new width
             if (isViewingDetails && searchResult != null) {
-                this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
-                updateContentHeight();
+                ensureHtmlRenderer();
+                if (this.htmlRenderer != null) {
+                    this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
+                    updateContentHeight();
+                }
             } else if (!isViewingDetails && clickableResults != null) {
                     // Recalculate height for search results list
                     this.contentHeight = 0;
@@ -177,8 +181,11 @@ public class OmnisearchScreen extends Screen {
             this.searchResult = lastSearchResult;
             this.isViewingDetails = true;
             this.scrollOffset = lastScrollOffset;
-            this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
-            updateContentHeight();
+            ensureHtmlRenderer();
+            if (this.htmlRenderer != null) {
+                this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
+                updateContentHeight();
+            }
         } else if (!wasViewingDetails && lastSearchResults != null) {
             this.searchResults = lastSearchResults;
             this.isViewingDetails = false;
@@ -198,8 +205,11 @@ public class OmnisearchScreen extends Screen {
                     this.searchResult = itemData;
                     this.isViewingDetails = true;
                     this.scrollOffset = 0;
-                    this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
-                    updateContentHeight();
+                    ensureHtmlRenderer();
+                    if (this.htmlRenderer != null) {
+                        this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
+                        updateContentHeight();
+                    }
 
                     // Update static state for persistence
                     lastSearchResult = this.searchResult;
@@ -207,6 +217,18 @@ public class OmnisearchScreen extends Screen {
                     lastSearchResults = null;
                 }, this.minecraft::execute);
             }));
+        }
+    }
+
+    private void ensureHtmlRenderer() {
+        if (this.htmlRenderer != null) return;
+        try {
+            this.htmlRenderer = new HtmlRenderer(this::updateContentHeight);
+        } catch (Throwable t) {
+            System.err.println("HtmlRenderer unavailable: " + t);
+            this.htmlRenderer = null;
+            this.isViewingDetails = false;
+            this.noResults = false;
         }
     }
 
@@ -272,9 +294,14 @@ public class OmnisearchScreen extends Screen {
 
     private void handleItemDataResult(ItemData itemData) {
         this.searchResult = itemData;
-        this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
-        updateContentHeight(); // Initial content height calculation
-        this.isViewingDetails = true;
+        ensureHtmlRenderer();
+        if (this.htmlRenderer != null) {
+            this.htmlRenderer.prepare(this.searchResult.htmlContent(), this.panelWidth - 40, this.searchResult.url());
+            updateContentHeight();
+            this.isViewingDetails = true;
+        } else {
+            this.isViewingDetails = true; // 仍进入详情视图，后续降级渲染将以纯文本显示
+        }
         this.scrollOffset = 0;
         // Update static state
         lastSearchResult = this.searchResult;
@@ -330,18 +357,9 @@ public class OmnisearchScreen extends Screen {
             return true;
         }
 
-        return false;
+        return super.mouseClicked(pMouseX, pMouseY, pButton);
     }
 
-    @Override
-    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean isDoubleClick) {
-        double x = event.x();
-        double y = event.y();
-        int button = event.button();
-        boolean handled = processMouseClick(x, y, button);
-        if (handled) return true;
-        return super.mouseClicked(event, isDoubleClick);
-    }
 
     public boolean processMouseClick(double pMouseX, double pMouseY, int pButton) {
         boolean isClickInsidePanel = pMouseX >= this.panelX && pMouseX <= this.panelX + this.panelWidth &&
@@ -446,29 +464,19 @@ public class OmnisearchScreen extends Screen {
         return false;
     }
 
-    @Override
-    public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
-        if (event.button() == 0) this.isDragging = false;
-        return super.mouseReleased(event);
-    }
 
     public boolean mouseDragged(double pMouseX, double pMouseY, int pButton, double pDragX, double pDragY) {
         if (this.isDragging) { handleMouseDrag(pMouseY); return true; }
         return false;
     }
 
-    @Override
-    public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double dragX, double dragY) {
-        if (this.isDragging) { handleMouseDrag(event.y()); return true; }
-        return super.mouseDragged(event, dragX, dragY);
-    }
 
     public boolean keyPressed(int pKeyCode, int pScanCode, int pModifiers) {
         if (pKeyCode == GLFW.GLFW_KEY_ESCAPE) {
             this.onClose();
             return true;
         }
-        return false;
+        return super.keyPressed(pKeyCode, pScanCode, pModifiers);
     }
 
 
