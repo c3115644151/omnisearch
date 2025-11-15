@@ -20,6 +20,7 @@ import java.util.List;
  */
 public class OmnisearchScreen extends Screen {
     private EditBox searchBox;
+    private net.minecraft.client.gui.components.Button searchButton;
     private int panelX;
     private int panelY;
     private int panelWidth;
@@ -46,6 +47,7 @@ public class OmnisearchScreen extends Screen {
 
     private String initialSearchTerm = null;
     private final Screen parentScreen;
+    private boolean pendingSubmit = false;
 
     // Static fields for persistence
     private static ItemData lastSearchResult;
@@ -73,7 +75,6 @@ public class OmnisearchScreen extends Screen {
     /**
      * Called when the screen is being closed. Saves the current UI state and initiates the closing animation.
      */
-    @Override
     public void onClose() {
         // Save state before closing
         lastSearchResult = this.searchResult;
@@ -89,7 +90,6 @@ public class OmnisearchScreen extends Screen {
         }
     }
 
-    @Override
     protected void init() {
         try {
             super.init();
@@ -107,8 +107,14 @@ public class OmnisearchScreen extends Screen {
             int searchBoxX = this.panelX + 20;
             int searchBoxY = this.panelY + this.panelHeight - searchBoxHeight - 10;
 
-            // Always re-create widgets d safer prctice.
-            this.searchBox = new EditBox(this.font, searchBoxX, searchBoxY, searchBoxWidth, searchBoxHeight, Component.literal("Search..."));
+            // Always re-create widgets
+            int buttonWidth = 60;
+            int spacing = 5;
+            int editWidth = searchBoxWidth - buttonWidth - spacing;
+            this.searchBox = new EditBox(this.font, searchBoxX, searchBoxY, editWidth, searchBoxHeight, Component.literal("Search..."));
+            this.searchButton = net.minecraft.client.gui.components.Button.builder(Component.literal("搜索"), b -> submitSearch())
+                    .bounds(searchBoxX + editWidth + spacing, searchBoxY, buttonWidth, searchBoxHeight)
+                    .build();
             this.htmlRenderer = new HtmlRenderer(this::updateContentHeight);
             this.backButton = new ClickableEntry("< 返回", () -> {
                 this.isViewingDetails = false;
@@ -129,6 +135,7 @@ public class OmnisearchScreen extends Screen {
 
             this.searchBox.setValue(searchBoxText);
             addRenderableWidget(this.searchBox);
+            addRenderableWidget(this.searchButton);
             setInitialFocus(this.searchBox);
 
             restoreState();
@@ -203,23 +210,18 @@ public class OmnisearchScreen extends Screen {
         }
     }
 
-    @Override
-    public boolean keyPressed(int pKeyCode, int pScanCode, int pModifiers) {
-        if (pKeyCode == GLFW.GLFW_KEY_ESCAPE) {
-            this.onClose();
-            return true;
+    public void submitSearch() {
+        if (this.searchBox == null) return;
+        String searchText = this.searchBox.getValue();
+        if (searchText != null && !searchText.trim().isEmpty()) {
+            System.out.println("Omnisearch Enter submit: " + searchText.trim());
+            performSearch(searchText.trim());
         }
-
-        if (this.searchBox.isFocused() && (pKeyCode == GLFW.GLFW_KEY_ENTER || pKeyCode == GLFW.GLFW_KEY_KP_ENTER)) {
-            String searchText = this.searchBox.getValue();
-            if (!searchText.trim().isEmpty()) {
-                performSearch(searchText);
-            }
-            return true;
-        }
-
-        return this.searchBox.keyPressed(pKeyCode, pScanCode, pModifiers) || super.keyPressed(pKeyCode, pScanCode, pModifiers);
     }
+
+    public void requestSubmit() { this.pendingSubmit = true; }
+
+    
 
     /**
      * Executes an asynchronous search for the given text, updating the UI with the results.
@@ -293,8 +295,8 @@ public class OmnisearchScreen extends Screen {
 
 
 
-    @Override
     public boolean mouseClicked(double pMouseX, double pMouseY, int pButton) {
+        System.out.println("Omnisearch mouseClicked x=" + pMouseX + ", y=" + pMouseY + ", btn=" + pButton + ", details=" + this.isViewingDetails + ", resultsSize=" + (this.clickableResults == null ? -1 : this.clickableResults.size()));
         boolean isClickInsidePanel = pMouseX >= this.panelX && pMouseX <= this.panelX + this.panelWidth &&
                                    pMouseY >= this.panelY && pMouseY <= this.panelY + this.panelHeight;
 
@@ -328,7 +330,53 @@ public class OmnisearchScreen extends Screen {
             return true;
         }
 
-        return super.mouseClicked(pMouseX, pMouseY, pButton);
+        return false;
+    }
+
+    @Override
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean isDoubleClick) {
+        double x = event.x();
+        double y = event.y();
+        int button = event.button();
+        boolean handled = processMouseClick(x, y, button);
+        if (handled) return true;
+        return super.mouseClicked(event, isDoubleClick);
+    }
+
+    public boolean processMouseClick(double pMouseX, double pMouseY, int pButton) {
+        boolean isClickInsidePanel = pMouseX >= this.panelX && pMouseX <= this.panelX + this.panelWidth &&
+                                   pMouseY >= this.panelY && pMouseY <= this.panelY + this.panelHeight;
+
+        if (!isClickInsidePanel) {
+            this.onClose();
+            return true;
+        }
+
+        if (handleDetailViewClick(pMouseX, pMouseY)) {
+            return true;
+        }
+
+        if (this.isViewingDetails && this.htmlRenderer != null) {
+            String url = this.htmlRenderer.getLinkUrlAt((int) pMouseX, (int) pMouseY, this.panelX + 20, this.panelY + 45);
+            if (url != null) {
+                try {
+                    net.minecraft.Util.getPlatform().openUri(url);
+                    return true;
+                } catch (Exception e) {
+                    System.err.println("Could not open link: " + e.getMessage());
+                }
+            }
+        }
+
+        if (handleResultListClick(pMouseX, pMouseY)) {
+            return true;
+        }
+
+        if (handleScrollbarClick(pMouseX, pMouseY, pButton)) {
+            return true;
+        }
+
+        return false;
     }
 
     /**
@@ -340,9 +388,11 @@ public class OmnisearchScreen extends Screen {
     private boolean handleDetailViewClick(double pMouseX, double pMouseY) {
         if (this.isViewingDetails) {
             if (this.backButton.mouseClicked(pMouseX, pMouseY)) {
+                System.out.println("Omnisearch clicked back");
                 return true;
             }
             if (this.urlEntry.mouseClicked(pMouseX, pMouseY)) {
+                System.out.println("Omnisearch clicked urlEntry");
                 return true;
             }
         }
@@ -359,6 +409,7 @@ public class OmnisearchScreen extends Screen {
         if (this.clickableResults != null && !this.isViewingDetails) {
             for (ClickableEntry clickable : this.clickableResults) {
                 if (clickable.mouseClicked(pMouseX, pMouseY)) {
+                    System.out.println("Omnisearch clicked result: " + clickable.getItemName());
                     return true;
                 }
             }
@@ -389,22 +440,37 @@ public class OmnisearchScreen extends Screen {
         return false;
     }
 
-    @Override
+
     public boolean mouseReleased(double pMouseX, double pMouseY, int pButton) {
-        if (pButton == 0) {
-            this.isDragging = false;
-        }
-        return super.mouseReleased(pMouseX, pMouseY, pButton);
+        if (pButton == 0) this.isDragging = false;
+        return false;
     }
 
     @Override
+    public boolean mouseReleased(net.minecraft.client.input.MouseButtonEvent event) {
+        if (event.button() == 0) this.isDragging = false;
+        return super.mouseReleased(event);
+    }
+
     public boolean mouseDragged(double pMouseX, double pMouseY, int pButton, double pDragX, double pDragY) {
-        if (this.isDragging) {
-            handleMouseDrag(pMouseY);
+        if (this.isDragging) { handleMouseDrag(pMouseY); return true; }
+        return false;
+    }
+
+    @Override
+    public boolean mouseDragged(net.minecraft.client.input.MouseButtonEvent event, double dragX, double dragY) {
+        if (this.isDragging) { handleMouseDrag(event.y()); return true; }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    public boolean keyPressed(int pKeyCode, int pScanCode, int pModifiers) {
+        if (pKeyCode == GLFW.GLFW_KEY_ESCAPE) {
+            this.onClose();
             return true;
         }
-        return super.mouseDragged(pMouseX, pMouseY, pButton, pDragX, pDragY);
+        return false;
     }
+
 
     /**
      * Manages the scrolling logic when the scrollbar is being dragged.
@@ -428,10 +494,8 @@ public class OmnisearchScreen extends Screen {
     public void render(GuiGraphics pGuiGraphics, int pMouseX, int pMouseY, float pPartialTick) {
         if (this.parentScreen != null) {
             this.parentScreen.render(pGuiGraphics, -1, -1, pPartialTick);
-            pGuiGraphics.fill(0, 0, this.width, this.height, 0x80000000); // Darken the background
-        } else {
-            this.renderBackground(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
         }
+        pGuiGraphics.fill(0, 0, this.width, this.height, 0x80000000);
 
         long currentTime = System.currentTimeMillis();
         long elapsedTime = currentTime - animationStartTime;
@@ -453,6 +517,13 @@ public class OmnisearchScreen extends Screen {
         this.panelX = (int)(initialPanelX + (finalPanelX - initialPanelX) * easedProgress);
 
         renderUI(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
+
+        super.render(pGuiGraphics, pMouseX, pMouseY, pPartialTick);
+
+        if (this.pendingSubmit) {
+            this.pendingSubmit = false;
+            submitSearch();
+        }
     }
 
     /**
@@ -488,8 +559,10 @@ public class OmnisearchScreen extends Screen {
         // Update search box position
         this.searchBox.setX(this.panelX + 15);
         this.searchBox.setY(this.panelY + this.panelHeight - this.searchBox.getHeight() - 10);
+        this.searchButton.setX(this.searchBox.getX() + this.searchBox.getWidth() + 5);
+        this.searchButton.setY(this.searchBox.getY());
 
-        ModernUI.renderSearchBox(ctx, this.searchBox.getX() - 2, this.searchBox.getY() - 2, this.searchBox.getWidth() + 4, this.searchBox.getHeight() + 4);
+        ModernUI.renderSearchBox(ctx, this.searchBox.getX() - 2, this.searchBox.getY() - 2, this.searchBox.getWidth() + 4 + 65, this.searchBox.getHeight() + 4);
         if (this.searchBox.isFocused()) {
             int gx0 = this.searchBox.getX() - 2;
             int gy0 = this.searchBox.getY() - 2;

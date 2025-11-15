@@ -1,3 +1,5 @@
 {
-  "tooltip.omnisearch.hold_tab": "长按 [TAB] 键搜索"
+  "tooltip.omnisearch.hold_tab": "长按 [TAB] 键搜索",
+  "key.categories.omnisearch": "Omnisearch",
+  "key.omnisearch.open": "打开 Omnisearch"
 }

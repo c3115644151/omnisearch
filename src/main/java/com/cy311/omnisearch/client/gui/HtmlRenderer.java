@@ -126,8 +126,8 @@ public class HtmlRenderer {
                 scale *= 1.15f;
             }
             int renderWidth = ctx.renderWidth;
-            g.pose().pushPose();
-            g.pose().scale(scale, scale, 1.0f);
+            RenderCompat.push(g);
+            RenderCompat.scale(g, scale, scale);
             int currentX = (int)(x / scale);
             int currentY = (int)(y / scale);
             if (line.lineType == RenderableLine.LineType.IMAGE_LINE) {
@@ -144,17 +144,17 @@ public class HtmlRenderer {
             }
             if (line.lineType == RenderableLine.LineType.TITLE_LINE) {
                 int ux0 = currentX;
-                int ux1 = currentX + Math.max(line.totalWidth, (int)((renderWidth / scale) * 0.60f));
+                int ux1 = currentX + (int)(line.totalWidth * 0.6f); // 仅占标题宽度的60%
                 int uy0 = currentY + line.height + 1;
                 int uy1 = uy0 + 1; // 1px baseline
-                int gradientW = Math.min(16, ux1 - ux0);
+                int gradientW = Math.min(10, Math.max(0, ux1 - ux0));
                 int baseEnd = ux1 - gradientW;
                 if (baseEnd > ux0) {
-                    g.fill(ux0, uy0, baseEnd, uy1, 0x33454A53); // 更淡的 1px 主线
+                    g.fill(ux0, uy0, baseEnd, uy1, 0x22454A53); // 更淡 alpha
                 }
                 for (int i = 0; i < gradientW; i++) {
                     float t = (float)i / (float)gradientW;
-                    int alpha = (int)(0x44 * (1.0f - t));
+                    int alpha = (int)(0x33 * (1.0f - t)); // 渐隐更弱
                     int color = (alpha << 24) | 0x00454A53;
                     int px = baseEnd + i;
                     g.fill(px, uy0, px + 1, uy1, color);
@@ -167,15 +167,15 @@ public class HtmlRenderer {
                     currentX = renderStyledPart(ctx, line, (StyledPart) part, currentX, currentY);
                 }
             }
-            g.pose().popPose();
+            RenderCompat.pop(g);
         }
 
         static void renderFigcaption(RenderContext ctx, RenderableLine line, int x, int y, CaptionMetrics m) {
             GuiGraphics g = ctx.g;
             Font font = ctx.font;
-            g.pose().pushPose();
-            g.pose().translate(x + m.offsetX, y, 0);
-            g.pose().scale(m.finalScale, m.finalScale, 1.0f);
+            RenderCompat.push(g);
+            RenderCompat.translate(g, x + m.offsetX, y);
+            RenderCompat.scale(g, m.finalScale, m.finalScale);
             int currentX = 0;
             int currentY = 0;
             for (RenderablePart part : line.parts) {
@@ -186,7 +186,7 @@ public class HtmlRenderer {
                     currentX += styledPart.width;
                 }
             }
-            g.pose().popPose();
+            RenderCompat.pop(g);
         }
 
         private static int computeCenterOffset(RenderableLine line, float unscaledRenderWidth) {
@@ -196,11 +196,17 @@ public class HtmlRenderer {
         private static int renderImagePart(RenderContext ctx, RenderableLine line, ImagePart imagePart, int currentX, int currentY) {
             GuiGraphics g = ctx.g;
             int partY = currentY + (int)((line.height - imagePart.imageHeight) / 2f);
+            RenderCompat.push(g);
+            RenderCompat.translate(g, currentX, partY);
             if (imagePart.isSprite) {
-                g.blitSprite(net.minecraft.client.renderer.RenderType::guiTextured, imagePart.location, currentX, partY, imagePart.imageWidth, imagePart.imageHeight);
+                RenderCompat.blitSprite(g, imagePart.location, 0, 0, imagePart.imageWidth, imagePart.imageHeight);
             } else if (imagePart.location != null) {
-                g.blit(net.minecraft.client.renderer.RenderType::guiTextured, imagePart.location, currentX, partY, 0f, 0f, imagePart.imageWidth, imagePart.imageHeight, imagePart.imageWidth, imagePart.imageHeight);
+                float sx = imagePart.texWidth > 0 ? (float) imagePart.imageWidth / (float) imagePart.texWidth : 1f;
+                float sy = imagePart.texHeight > 0 ? (float) imagePart.imageHeight / (float) imagePart.texHeight : 1f;
+                RenderCompat.scale(g, sx, sy);
+                RenderCompat.blitTexture(g, imagePart.location, 0, 0, 0, 0, Math.max(1, imagePart.texWidth), Math.max(1, imagePart.texHeight), Math.max(1, imagePart.texWidth), Math.max(1, imagePart.texHeight));
             }
+            RenderCompat.pop(g);
             return currentX + imagePart.width;
         }
 
@@ -535,7 +541,10 @@ public class HtmlRenderer {
         }
 
         ResourceLocation cachedTexture = textureCache.get(src);
-        ImagePart imagePart = new ImagePart(src, width, height, cachedTexture); // Create with cached texture if available
+        int[] size0 = com.cy311.omnisearch.util.ImageManager.getTextureSize(src);
+        int texW = size0 != null ? Math.max(1, size0[0]) : Math.max(1, (int)(width / getImageScaleFactor()));
+        int texH = size0 != null ? Math.max(1, size0[1]) : Math.max(1, (int)(height / getImageScaleFactor()));
+        ImagePart imagePart = new ImagePart(src, width, height, texW, texH, cachedTexture);
         this.currentLine.addPart(imagePart);
         this.currentX += width * scale;
 
@@ -543,7 +552,9 @@ public class HtmlRenderer {
         if (cachedTexture == null) {
             ImageManager.getTexture(src, (newTexture) -> {
                 imagePart.location = newTexture;
-                textureCache.put(src, newTexture); // Cache the newly loaded texture
+                textureCache.put(src, newTexture);
+                int[] s = com.cy311.omnisearch.util.ImageManager.getTextureSize(src);
+                if (s != null) { imagePart.texWidth = Math.max(1, s[0]); imagePart.texHeight = Math.max(1, s[1]); }
                 if (onUpdate != null) {
                     onUpdate.run();
                 }
@@ -554,15 +565,19 @@ public class HtmlRenderer {
     private static class ImagePart extends RenderablePart {
         final int imageWidth;
         final int imageHeight;
+        int texWidth;
+        int texHeight;
         final boolean isSprite;
         ResourceLocation location;
         final String src; // Only for web images
 
         // Constructor for web images
-        ImagePart(String src, int width, int height, ResourceLocation texture) {
-            super(width);
-            this.imageWidth = width;
-            this.imageHeight = height;
+        ImagePart(String src, int drawWidth, int drawHeight, int texWidth, int texHeight, ResourceLocation texture) {
+            super(drawWidth);
+            this.imageWidth = drawWidth;
+            this.imageHeight = drawHeight;
+            this.texWidth = texWidth;
+            this.texHeight = texHeight;
             this.location = texture;
             this.isSprite = false;
             this.src = src;
@@ -573,6 +588,8 @@ public class HtmlRenderer {
             super(width);
             this.imageWidth = width;
             this.imageHeight = height;
+            this.texWidth = width;
+            this.texHeight = height;
             this.location = spriteLocation;
             this.isSprite = isSprite;
             this.src = null;
@@ -794,7 +811,10 @@ public class HtmlRenderer {
                 else if ("square".equals(unorderedListStyle)) prefix = "■ ";
                 else prefix = "• ";
             }
-            Style numStyle = styleStack.peek().withBold(true);
+            Style numStyle = styleStack.peek();
+            if (inOrderedList) {
+                numStyle = numStyle.withBold(true);
+            }
             addText(prefix, numStyle);
             for (int i = 0; i < LIST_INDENT_SPACES; i++) {
                 addText(" ", styleStack.peek());
@@ -884,11 +904,18 @@ public class HtmlRenderer {
             } catch (NumberFormatException e) {
                 // Ignore
             }
-            float f = getImageScaleFactor();
-            int scaledWidth = (int) (imgWidth * f);
-            int scaledHeight = (int) (imgHeight * f);
+            float baseScale = getImageScaleFactor();
+            float maxW = layout.correctedMaxWidth(this.renderWidth);
+            int targetW = (int) (imgWidth * baseScale);
+            if (targetW > maxW) {
+                float clampScale = maxW / (float) imgWidth;
+                targetW = (int) (imgWidth * clampScale);
+            }
+            if (targetW < 1) targetW = 1;
+            int targetH = (int) (imgHeight * (targetW / (float) imgWidth));
+            if (targetH < 1) targetH = 1;
 
-            addImage(absoluteSrc, scaledWidth, scaledHeight);
+            addImage(absoluteSrc, targetW, targetH);
         }
     }
 

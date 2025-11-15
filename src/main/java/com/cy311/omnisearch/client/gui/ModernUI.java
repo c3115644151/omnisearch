@@ -36,11 +36,11 @@ public class ModernUI {
         
         drawRoundedRect(pGuiGraphics, pX, pY, pX + pWidth, pY + pHeight, 6, COLOR_BORDER, true);
 
-        pGuiGraphics.pose().pushPose();
-        pGuiGraphics.pose().translate(pX + pWidth / 2, pY + 10, 0);
-        pGuiGraphics.pose().scale(GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
+        RenderCompat.push(pGuiGraphics);
+        RenderCompat.translate(pGuiGraphics, pX + pWidth / 2, pY + 10);
+        RenderCompat.scale(pGuiGraphics, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
         pGuiGraphics.drawCenteredString(pFont, pTitle, 0, 0, COLOR_TITLE);
-        pGuiGraphics.pose().popPose();
+        RenderCompat.pop(pGuiGraphics);
     }
 
     public static void renderPanel(UIContext ctx, String title) {
@@ -54,10 +54,10 @@ public class ModernUI {
 
         guiGraphics.enableScissor(panelX, panelY + 20, panelX + panelWidth, panelY + panelHeight - 30);
 
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(panelX + 10, yOffset, 0);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, panelX + 10, yOffset);
         guiGraphics.drawString(font, "找到多个结果:", 0, 0, COLOR_SUBTLE_TEXT);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
         yOffset += 15;
 
         for (ClickableEntry clickable : clickableResults) {
@@ -83,11 +83,11 @@ public class ModernUI {
                 guiGraphics.fill(accentX0, cardY0, accentX0 + accentW, cardY1, accentPurple);
             }
 
-            guiGraphics.pose().pushPose();
-            guiGraphics.pose().translate(clickable.getX(), yOffset + 2, 0);
+            RenderCompat.push(guiGraphics);
+            RenderCompat.translate(guiGraphics, clickable.getX(), yOffset + 2);
             int nameColor = hover ? 0xFFE7D9FF : COLOR_ITEM_NAME; // 悬停时标题文字改为淡紫
             guiGraphics.drawString(font, itemName, 0, 0, nameColor);
-            guiGraphics.pose().popPose();
+            RenderCompat.pop(guiGraphics);
 
             if (modName != null && !modName.isEmpty()) {
                 float scale = 0.8f;
@@ -101,12 +101,12 @@ public class ModernUI {
                     modNameWidth = (int) (font.width(truncatedModName) * scale);
                 }
 
-                guiGraphics.pose().pushPose();
-                guiGraphics.pose().translate(clickable.getX() + contentWidth - modNameWidth, yOffset + 2 + (font.lineHeight * (1.0f - scale)), 0);
-                guiGraphics.pose().scale(scale, scale, scale);
+                RenderCompat.push(guiGraphics);
+                RenderCompat.translate(guiGraphics, clickable.getX() + contentWidth - modNameWidth, yOffset + 2 + (font.lineHeight * (1.0f - scale)));
+                RenderCompat.scale(guiGraphics, scale, scale);
                 int modColor = hover ? 0xFFD8C8FF : COLOR_MOD_NAME; // 悬停时模组名改为淡紫
                 guiGraphics.drawString(font, truncatedModName, 0, 0, modColor);
-                guiGraphics.pose().popPose();
+                RenderCompat.pop(guiGraphics);
 
                 if (clickable.isMouseOver(mouseX, mouseY) && !truncatedModName.equals(modName)) {
                     tooltipToRender = () -> {
@@ -118,11 +118,11 @@ public class ModernUI {
 
                         drawRoundedRect(guiGraphics, tooltipX, tooltipY, tooltipX + tooltipWidth, tooltipY + tooltipHeight, 2, 0xCC303235); // Lighter, semi-transparent background
 
-                        guiGraphics.pose().pushPose();
-                        guiGraphics.pose().translate(tooltipX + 3, tooltipY + 2, 0);
-                        guiGraphics.pose().scale(tooltipScale, tooltipScale, tooltipScale);
+                        RenderCompat.push(guiGraphics);
+                        RenderCompat.translate(guiGraphics, tooltipX + 3, tooltipY + 2);
+                        RenderCompat.scale(guiGraphics, tooltipScale, tooltipScale);
                         guiGraphics.drawString(font, modName, 0, 0, COLOR_GOLD);
-                        guiGraphics.pose().popPose();
+                        RenderCompat.pop(guiGraphics);
                     };
                 }
             }
@@ -142,11 +142,11 @@ public class ModernUI {
     }
 
     public static void renderLoading(GuiGraphics guiGraphics, Font font, int panelX, int panelWidth, int panelY, int panelHeight) {
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(panelX + panelWidth / 2, panelY + panelHeight / 2, 0);
-        guiGraphics.pose().scale(GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, panelX + panelWidth / 2, panelY + panelHeight / 2);
+        RenderCompat.scale(guiGraphics, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
         guiGraphics.drawCenteredString(font, "加载中...", 0, 0, COLOR_TITLE);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
     }
 
     public static void renderLoading(UIContext ctx) {
@@ -154,11 +154,11 @@ public class ModernUI {
     }
 
     public static void renderNoResults(GuiGraphics guiGraphics, Font font, int panelX, int panelWidth, int panelY, int panelHeight) {
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(panelX + panelWidth / 2, panelY + panelHeight / 2, 0);
-        guiGraphics.pose().scale(GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, panelX + panelWidth / 2, panelY + panelHeight / 2);
+        RenderCompat.scale(guiGraphics, GLOBAL_SCALE_FACTOR, GLOBAL_SCALE_FACTOR);
         guiGraphics.drawCenteredString(font, "无结果", 0, 0, COLOR_TITLE);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
     }
 
     public static void renderNoResults(UIContext ctx) {
@@ -169,11 +169,11 @@ public class ModernUI {
         if (entry.isMouseOver(mouseX, mouseY)) {
             drawRoundedRect(guiGraphics, entry.getX() - 2, entry.getY() - 2, entry.getX() + entry.getWidth() + 2, entry.getY() + entry.getHeight() + 2, 3, COLOR_HOVER);
         }
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(entry.getX(), entry.getY(), 0);
-        guiGraphics.pose().scale(BODY_SCALE_FACTOR, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, entry.getX(), entry.getY());
+        RenderCompat.scale(guiGraphics, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
         guiGraphics.drawString(font, entry.getText(), 0, 0, COLOR_TEXT);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
     }
 
     public static void renderClickable(UIContext ctx, ClickableEntry entry) {
@@ -278,20 +278,20 @@ public class ModernUI {
 
         // Now draw the text on top
         // Title
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(x + width / 2, y, 0);
-        guiGraphics.pose().scale(titleScale, titleScale, titleScale);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, x + width / 2, y);
+        RenderCompat.scale(guiGraphics, titleScale, titleScale);
         Component titleComponent = Component.literal(itemData.title()).withStyle(Style.EMPTY.withBold(true));
         guiGraphics.drawCenteredString(font, titleComponent, 0, 0, COLOR_GOLD);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
         y += titleHeight;
 
         // Mod Name
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(x + width / 2, y, 0);
-        guiGraphics.pose().scale(BODY_SCALE_FACTOR, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, x + width / 2, y);
+        RenderCompat.scale(guiGraphics, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
         guiGraphics.drawCenteredString(font, itemData.modName(), 0, 0, COLOR_SUBTLE_TEXT);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
         y += modNameHeight;
 
         // URL
@@ -301,11 +301,11 @@ public class ModernUI {
 
         boolean isHovering = urlEntry.isMouseOver(mouseX, mouseY);
         int urlColor = isHovering ? COLOR_URL_HOVER : COLOR_URL;
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(x + width / 2, y, 0);
-        guiGraphics.pose().scale(BODY_SCALE_FACTOR, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
+        RenderCompat.push(guiGraphics);
+        RenderCompat.translate(guiGraphics, x + width / 2, y);
+        RenderCompat.scale(guiGraphics, BODY_SCALE_FACTOR, BODY_SCALE_FACTOR);
         guiGraphics.drawCenteredString(font, urlText, 0, 0, urlColor);
-        guiGraphics.pose().popPose();
+        RenderCompat.pop(guiGraphics);
 
         if (isHovering) {
             int centeredUrlWidth = (int) (font.width(urlText) * BODY_SCALE_FACTOR);

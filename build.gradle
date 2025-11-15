@@ -24,8 +24,6 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 neoForge {
     version = project.neo_version
 
-    // Disable Parchment for 1.21.2 migration until a valid mapping release is targeted
-
     runs {
         client {
             client()
@@ -80,8 +78,6 @@ dependencies {
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
     jarJar 'org.jsoup:jsoup:1.17.2'
     jarJar 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
-    additionalRuntimeClasspath 'org.jsoup:jsoup:1.17.2'
-    additionalRuntimeClasspath 'com.twelvemonkeys.imageio:imageio-webp:3.12.0'
 }
 
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {

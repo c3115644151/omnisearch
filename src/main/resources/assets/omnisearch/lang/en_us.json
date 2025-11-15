@@ -1,3 +1,5 @@
 {
-  "tooltip.omnisearch.hold_tab": "Hold [TAB] to search"
+  "tooltip.omnisearch.hold_tab": "Hold [TAB] to search",
+  "key.categories.omnisearch": "Omnisearch",
+  "key.omnisearch.open": "Open Omnisearch"
 }

@@ -18,7 +18,6 @@ import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.MutableComponent;
 
-@EventBusSubscriber(modid = "omnisearch", value = Dist.CLIENT)
 public class ClientEvents {
 
     @SubscribeEvent
@@ -26,7 +25,6 @@ public class ClientEvents {
         event.register(KeyBinds.openOmnisearch);
     }
 
-    @EventBusSubscriber(modid = "omnisearch", value = Dist.CLIENT)
     public static class ForgeEvents {
         private static long tabHoldStartTime = 0;
         private static ItemStack lastHoveredStack = ItemStack.EMPTY;
@@ -36,10 +34,19 @@ public class ClientEvents {
         public static void onKeyInput(InputEvent.Key event) {
             try {
                 if (KeyBinds.openOmnisearch.consumeClick()) {
-                    Minecraft.getInstance().execute(() -> {
-                        Screen parent = Minecraft.getInstance().screen;
-                        Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, null));
-                    });
+                    if (Minecraft.getInstance().screen == null) {
+                        Minecraft.getInstance().execute(() -> {
+                            Minecraft.getInstance().setScreen(new OmnisearchScreen(null, null));
+                        });
+                    }
+                }
+
+                // Enter 键：推迟到下一帧在界面中执行，避免与输入法提交顺序冲突
+                if (event.getAction() == GLFW.GLFW_PRESS && (event.getKey() == GLFW.GLFW_KEY_ENTER || event.getKey() == GLFW.GLFW_KEY_KP_ENTER)) {
+                    Screen s = Minecraft.getInstance().screen;
+                    if (s instanceof OmnisearchScreen os) {
+                        Minecraft.getInstance().execute(() -> os.requestSubmit());
+                    }
                 }
             } catch (Throwable t) {
                 System.err.println("Failed to open Omnisearch screen!");
@@ -47,11 +54,19 @@ public class ClientEvents {
             }
         }
 
+        
+
         @SubscribeEvent
         public static void onItemTooltip(ItemTooltipEvent event) {
             if (event.getItemStack().isEmpty()) return;
 
-            boolean isTabKeyDown = InputConstants.isKeyDown(Minecraft.getInstance().getWindow().getWindow(), GLFW.GLFW_KEY_TAB);
+            boolean isTabKeyDown = false;
+            try {
+                com.mojang.blaze3d.platform.Window win = Minecraft.getInstance().getWindow();
+                isTabKeyDown = InputConstants.isKeyDown(win, GLFW.GLFW_KEY_TAB);
+            } catch (Throwable ignored) {
+                isTabKeyDown = KeyBinds.openOmnisearch.isDown();
+            }
             ItemStack currentStack = event.getItemStack();
 
             if (isTabKeyDown) {
@@ -70,7 +85,7 @@ public class ClientEvents {
                         if (!hasPrintedForItem) {
                             String itemName = event.getItemStack().getHoverName().getString();
                             Screen parent = Minecraft.getInstance().screen;
-                            Minecraft.getInstance().execute(() -> Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, itemName)));
+                            Minecraft.getInstance().setScreen(new OmnisearchScreen(parent, itemName));
                             hasPrintedForItem = true;
                         }
                     } else {
