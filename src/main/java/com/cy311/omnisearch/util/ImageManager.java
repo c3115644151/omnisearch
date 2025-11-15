@@ -30,6 +30,24 @@ public class ImageManager {
     private static final Map<String, java.util.List<Consumer<ResourceLocation>>> listeners = new ConcurrentHashMap<>();
     private static final ExecutorService executor = Executors.newFixedThreadPool(2);
 
+    static {
+        try {
+            javax.imageio.spi.IIORegistry reg = javax.imageio.spi.IIORegistry.getDefaultInstance();
+            String[] spiClasses = new String[] {
+                    "com.twelvemonkeys.imageio.plugins.webp.WebPImageReaderSpi",
+                    "com.twelvemonkeys.imageio.plugins.jpeg.JPEGImageReaderSpi",
+                    "com.twelvemonkeys.imageio.plugins.png.PNGImageReaderSpi"
+            };
+            for (String cn : spiClasses) {
+                try {
+                    Class<?> c = Class.forName(cn);
+                    Object spi = c.getDeclaredConstructor().newInstance();
+                    reg.registerServiceProvider(spi);
+                } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {}
+    }
+
     public static ResourceLocation getTexture(String url, Consumer<ResourceLocation> onLoaded) {
         return getTexture(url, "https://www.mcmod.cn/", onLoaded);
     }
@@ -71,9 +89,9 @@ public class ImageManager {
                     byte[] imageBytes = inputStream.readAllBytes();
                     BufferedImage bufferedImage = readBuffered(imageBytes);
                     if (bufferedImage == null) {
-                        // 尝试服务端转码为 PNG 的备用 URL
-                        String alt = computeAlternateUrl(url);
-                        if (alt != null) {
+                        String[] alts = computeAlternateUrls(url);
+                        for (String alt : alts) {
+                            if (alt == null) continue;
                             try {
                                 java.net.HttpURLConnection c2 = (java.net.HttpURLConnection) new URL(alt).openConnection();
                                 c2.setConnectTimeout(5000);
@@ -86,6 +104,7 @@ public class ImageManager {
                                     bufferedImage = readBuffered(b2);
                                 }
                             } catch (Throwable ignored) {}
+                            if (bufferedImage != null) break;
                         }
                         if (bufferedImage == null) {
                             throw new IOException("Unsupported image format or corrupt image");
@@ -180,18 +199,20 @@ public class ImageManager {
         }
     }
 
-    private static String computeAlternateUrl(String original) {
+    private static String[] computeAlternateUrls(String original) {
         try {
             URL u = new URL(original);
             String host = u.getHost().toLowerCase();
             String queryJoin = (u.getQuery() == null || u.getQuery().isEmpty()) ? "?" : "&";
-            if (host.contains("mcmod.cn") || host.contains("mcmod")) {
-                return original + queryJoin + "x-oss-process=image/format,png";
+            String alt1 = original + queryJoin + "x-oss-process=image/format,png"; // 阿里 OSS
+            String alt2 = original + queryJoin + "imageMogr2/format/png"; // 七牛 CDN 常用
+            String alt3 = original + queryJoin + "format=png"; // 通用兜底
+            if (host.contains("mcmod")) {
+                return new String[]{alt1, alt2, alt3};
             }
-            // 通用兜底
-            return original + queryJoin + "format=png";
+            return new String[]{alt2, alt3};
         } catch (Throwable ignored) {
-            return null;
+            return new String[]{null};
         }
     }
 

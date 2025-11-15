@@ -56,11 +56,7 @@ neoForge {
             }
         }
 
-    mods {
-        "${mod_id}" {
-            sourceSet(sourceSets.main)
-        }
-    }
+        // mods block removed: dev run will load the built jar from run/mods
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
@@ -88,7 +84,16 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
-    // 生产环境不打入第三方库，保持轻量；dev 运行通过 localRuntime 提供类路径
+    // 将 jsoup 打入生产包，保证在 1.21.6 环境下解析 HTML
+    jarJar('org.jsoup:jsoup:[1.17.2,2)')
+    // 打入 TwelveMonkeys 以支持 WebP 等图片格式（仅此分支）
+    jarJar('com.twelvemonkeys.imageio:imageio-core:[3.12.0,4)')
+    jarJar('com.twelvemonkeys.imageio:imageio-metadata:[3.12.0,4)')
+    jarJar('com.twelvemonkeys.common:common-image:[3.12.0,4)')
+    jarJar('com.twelvemonkeys.common:common-io:[3.12.0,4)')
+    jarJar('com.twelvemonkeys.common:common-lang:[3.12.0,4)')
+    jarJar('com.twelvemonkeys.imageio:imageio-webp:[3.12.0,4)')
+    // 生产环境不打入图片解码库，保持轻量；dev 运行通过 localRuntime 提供类路径
 
     // dev 运行使用本地类路径，需确保依赖在 localRuntime
     localRuntime 'org.jsoup:jsoup:1.17.2'
@@ -169,3 +174,11 @@ tasks.named('jar').configure {
     def mcVer = project.minecraft_version
     archiveFileName = "${baseName}-${ver}-${mcVer}.jar"
 }
+// 将构建的 jar 复制到 run/mods，供 dev 运行使用
+tasks.register('prepareDevJar', Copy) {
+    dependsOn tasks.named('jar')
+    from(layout.buildDirectory.file("libs/${base.archivesName.get()}-${version}-${minecraft_version}.jar"))
+    into(file("run/mods"))
+}
+
+tasks.named('runClient').configure { dependsOn 'prepareDevJar' }
