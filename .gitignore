@@ -1,0 +1,47 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# vscode
+.vscode/
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+run
+runs
+run-data
+
+repo
+
+# Log files
+*.log
+
+# macOS specific
+.DS_Store
+
+# TraeAI specific
+.trae/
+
+# BMAD specific
+.bmad-core/
+.bmad-godot-game-dev/
+
+# Personal notes
+omnisearch_mod_memory.md
+
+fuck-u-code

@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@pixelium/web-vue": "^0.0.2-fix"
+  }
+}
