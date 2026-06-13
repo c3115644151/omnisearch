@@ -1,6 +1,10 @@
 package com.cy311.omnisearch.client.event;
 
 import com.cy311.omnisearch.OmnisearchMod;
+import com.cy311.omnisearch.client.screen.OmnisearchScreen;
+import com.cy311.omnisearch.data.repository.CacheLayer;
+import com.cy311.omnisearch.data.repository.SearchRepository;
+import com.cy311.omnisearch.data.source.McmodDataSource;
 import com.cy311.omnisearch.keybinds.KeyBinds;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -24,13 +28,23 @@ public class TooltipEventHandler {
 
     private static final long HOLD_THRESHOLD_MS = 1000; // 1 second hold
 
+    private static SearchRepository repository;
+
+    private static synchronized SearchRepository getRepository() {
+        if (repository == null) {
+            var mc = Minecraft.getInstance();
+            var cacheDir = mc.gameDirectory.toPath().resolve(".omnisearch/cache");
+            repository = new SearchRepository(new CacheLayer(cacheDir), new McmodDataSource());
+        }
+        return repository;
+    }
+
     @SubscribeEvent
     public static void onKeyInput(InputEvent.Key event) {
         if (KeyBinds.openSearch.consumeClick()) {
-            Minecraft.getInstance().tell(() -> {
-                // Subsequent Wave: open OmnisearchScreen
-                OmnisearchMod.LOGGER.info("Omnisearch key pressed - opening search");
-            });
+            Minecraft.getInstance().tell(() ->
+                Minecraft.getInstance().setScreen(new OmnisearchScreen(getRepository()))
+            );
         }
     }
 
@@ -54,8 +68,9 @@ public class TooltipEventHandler {
             if (holdTime >= HOLD_THRESHOLD_MS && !longPressTriggered) {
                 longPressTriggered = true;
                 String itemName = stack.getHoverName().getString();
-                OmnisearchMod.LOGGER.info("Long-press TAB on item: {}", itemName);
-                // Subsequent Wave: open search screen with itemName as query
+                Minecraft.getInstance().tell(() ->
+                    Minecraft.getInstance().setScreen(new OmnisearchScreen(getRepository()))
+                );
             }
         } else {
             lastHoveredStack = ItemStack.EMPTY;
@@ -64,3 +79,4 @@ public class TooltipEventHandler {
         }
     }
 }
+

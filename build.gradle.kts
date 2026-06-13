@@ -62,6 +62,7 @@ neoForge {
             sourceSet(sourceSets.main.get())
         }
     }
+
 }
 
 configurations {
@@ -77,8 +78,17 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
-    testImplementation("com.google.code.gson:gson:2.11.0")
     testImplementation("org.jsoup:jsoup:1.19.1")
+    testImplementation("org.mockito:mockito-core:5.14.2")
+    testImplementation("org.mockito:mockito-junit-jupiter:5.14.2")
+}
+
+// Make Minecraft classes available to test source set for Mockito-based rendering tests
+sourceSets {
+    test {
+        compileClasspath += sourceSets.main.get().compileClasspath
+        runtimeClasspath += sourceSets.main.get().runtimeClasspath
+    }
 }
 
 val generateModMetadata = tasks.register("generateModMetadata", ProcessResources::class) {

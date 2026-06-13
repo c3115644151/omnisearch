@@ -9,6 +9,9 @@ public class SearchReducer {
             case SearchEvent.SearchSubmitted s -> current
                 .withPage(SearchState.Page.RESULTS)
                 .withLoading(SearchState.LoadingState.LOADING);
+            case SearchEvent.SearchResultsLoaded r -> current
+                .withResults(r.results())
+                .withLoading(SearchState.LoadingState.IDLE);
             case SearchEvent.ResultSelected r -> {
                 if (r.index() < 0 || r.index() >= current.results().size()) {
                     throw new IndexOutOfBoundsException(
