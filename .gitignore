@@ -1,4 +1,4 @@
-# eclipse
+# Eclipse
 bin
 *.launch
 .settings
@@ -6,42 +6,46 @@ bin
 .classpath
 .project
 
-# idea
+# IntelliJ IDEA
 out
 *.ipr
 *.iws
 *.iml
 .idea
 
-# vscode
+# VS Code
 .vscode/
 
-# gradle
+# Gradle
 build
 .gradle
 
-# other
+# Runtime
 eclipse
 run
 runs
 run-data
 
-repo
+# Node.js (not needed for MC mod)
+node_modules/
+package.json
+package-lock.json
 
-# Log files
+# Temp sources (reference only, not for distribution)
+tmp_sources/
+
+# Logs
 *.log
 
-# macOS specific
+# macOS
 .DS_Store
 
-# TraeAI specific
+# TraeAI
 .trae/
 
-# BMAD specific
+# BMAD
 .bmad-core/
 .bmad-godot-game-dev/
 
 # Personal notes
-omnisearch_mod_memory.md
-
-fuck-u-code
+*.memory.md
