@@ -11,27 +11,10 @@ public class FetchResult {
         this.searchResults = searchResults;
     }
 
-    public static FetchResult withItemData(ItemData itemData) {
-        return new FetchResult(itemData, null);
-    }
-
-    public static FetchResult withSearchResults(List<SearchResult> searchResults) {
-        return new FetchResult(null, searchResults);
-    }
-
-    public boolean isItemData() {
-        return itemData != null;
-    }
-
-    public ItemData getItemData() {
-        return itemData;
-    }
-
-    public boolean isSearchResults() {
-        return searchResults != null;
-    }
-
-    public List<SearchResult> getSearchResults() {
-        return searchResults;
-    }
+    public static FetchResult withItemData(ItemData itemData) { return new FetchResult(itemData, null); }
+    public static FetchResult withSearchResults(List<SearchResult> searchResults) { return new FetchResult(null, searchResults); }
+    public boolean isItemData() { return itemData != null; }
+    public ItemData getItemData() { return itemData; }
+    public boolean isSearchResults() { return searchResults != null; }
+    public List<SearchResult> getSearchResults() { return searchResults; }
 }

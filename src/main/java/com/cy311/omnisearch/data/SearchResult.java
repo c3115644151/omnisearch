@@ -11,20 +11,12 @@ public class SearchResult {
         this.url = url;
     }
 
-    public String getItemName() {
-        return itemName;
-    }
-
-    public String getModName() {
-        return modName;
-    }
-
-    public String getUrl() {
-        return url;
-    }
+    public String getItemName() { return itemName; }
+    public String getModName() { return modName; }
+    public String getUrl() { return url; }
 
     public String getDisplayText() {
-        if (modName != null && !modName.isEmpty() && !modName.equals("vanilla_or_unknown")) {
+        if (modName != null && !modName.isEmpty() && !"vanilla_or_unknown".equals(modName)) {
             return itemName + " (" + modName + ")";
         }
         return itemName;

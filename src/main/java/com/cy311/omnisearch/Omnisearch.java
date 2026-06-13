@@ -1,22 +1,22 @@
 package com.cy311.omnisearch;
 
-import com.cy311.omnisearch.client.ClientEvents;
-import com.mojang.logging.LogUtils;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.common.NeoForge;
-import org.slf4j.Logger;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.common.MinecraftForge;
 
 @Mod(Omnisearch.MODID)
 public class Omnisearch {
     public static final String MODID = "omnisearch";
-    public static final Logger LOGGER = LogUtils.getLogger();
 
-    public Omnisearch(IEventBus modEventBus) {
-        // Register the onKeyRegister method to the mod event bus
-        modEventBus.register(ClientEvents.class);
+    public Omnisearch() {
+        IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
+        
+        modBus.addListener(com.cy311.omnisearch.client.ClientEvents::onKeyRegister);
 
-        // Register the ForgeEvents inner class to the forge event bus
-        NeoForge.EVENT_BUS.register(ClientEvents.ForgeEvents.class);
+        MinecraftForge.EVENT_BUS.addListener(com.cy311.omnisearch.client.ClientEvents::onKeyInput);
+        MinecraftForge.EVENT_BUS.addListener(com.cy311.omnisearch.client.ClientEvents::onItemTooltip);
+        MinecraftForge.EVENT_BUS.addListener(com.cy311.omnisearch.client.ClientEvents::onMouseScroll);
+        MinecraftForge.EVENT_BUS.addListener(com.cy311.omnisearch.client.ClientEvents::onScreenMouseScroll);
     }
 }
