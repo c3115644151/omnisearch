@@ -1,0 +1,30 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# Minecraft runs
+runs/
+
+# Generated resources
+src/generated/resources/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Stonecutter
+.stonecutter/
+
+# Local config (never commit tokens/secrets)
+*.local
