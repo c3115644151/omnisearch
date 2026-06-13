@@ -1,25 +1,34 @@
 # Omnisearch
 
-Minecraft 客户端 mod，在游戏内搜索和浏览 MC 百科(mcmod.cn)。
+Minecraft client mod — search and browse [mcmod.cn](https://www.mcmod.cn) in-game.
 
-## 状态
+## Status
 
-项目正在从零重写。旧代码已归档在 git tag `archive/v1.0.3-*` 中。
+v2 rewrite in progress. See `docs/` for design documents.
 
-## 开发
+## Tech Stack
 
-详见 [CLAUDE.md](./CLAUDE.md)。
+- **NeoForge** (ModDevGradle 2.0.141) — MC 1.21.1
+- **Stonecutter 0.9.5** — multi-version support from a single codebase
+- **Java 21**
+- **Kotlin DSL** Gradle scripts
 
-## 旧版参考
-
-旧代码(v1.0.3)通过 git tag 可访问：
+## Building
 
 ```bash
-git checkout archive/v1.0.3-neoforge-1.21.1
+./gradlew build
 ```
 
-MapleSugar365 fork（含 CAPTCHA 实现）：https://github.com/MapleSugar365/omnisearch/tree/hmmcm-hotfix
+## Running
 
-## 许可
+```bash
+./gradlew runClient
+```
 
-MIT License
+## Version Support
+
+Currently targeting 1.21.1. Stonecutter is configured and ready for additional versions — add them in `settings.gradle.kts`.
+
+## License
+
+MIT
