@@ -28,3 +28,5 @@ Thumbs.db
 
 # Local config (never commit tokens/secrets)
 *.local
+
+.trae/

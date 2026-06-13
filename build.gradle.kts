@@ -1,6 +1,6 @@
 plugins {
     id("java-library")
-    id("net.neoforged.moddev")
+    id("net.neoforged.moddev") version "2.0.141"
     id("maven-publish")
 }
 
@@ -36,17 +36,14 @@ neoForge {
     }
 
     runs {
-        client {
-            client()
+        register("client") {
             systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
         }
-        server {
-            server()
+        register("server") {
             programArgument("--nogui")
             systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
         }
-        data {
-            data()
+        register("data") {
             programArguments.addAll(
                 "--mod", property("mod_id") as String,
                 "--all",
@@ -62,30 +59,36 @@ neoForge {
 
     mods {
         register(property("mod_id") as String) {
-            sourceSet(sourceSets.main)
+            sourceSet(sourceSets.main.get())
         }
     }
 }
 
 configurations {
     create("localRuntime")
-    named("runtimeClasspath").extendsFrom(named("localRuntime").get())
+    named("runtimeClasspath") {
+        extendsFrom(named("localRuntime").get())
+    }
 }
 
 dependencies {
-    // Add mod dependencies here
+    implementation("org.jetbrains:annotations:26.0.2")
+    testImplementation(platform("org.junit:junit-bom:5.11.4"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("com.google.code.gson:gson:2.11.0")
 }
 
 val generateModMetadata = tasks.register("generateModMetadata", ProcessResources::class) {
     val replaceProperties = mapOf(
-        "minecraft_version" to property("minecraft_version"),
-        "minecraft_version_range" to property("minecraft_version_range"),
-        "neo_version" to property("neo_version"),
-        "loader_version_range" to property("loader_version_range"),
-        "mod_id" to property("mod_id"),
-        "mod_name" to property("mod_name"),
-        "mod_license" to property("mod_license"),
-        "mod_version" to property("mod_version"),
+        "minecraft_version" to project.property("minecraft_version"),
+        "minecraft_version_range" to project.property("minecraft_version_range"),
+        "neo_version" to project.property("neo_version"),
+        "loader_version_range" to project.property("loader_version_range"),
+        "mod_id" to project.property("mod_id"),
+        "mod_name" to project.property("mod_name"),
+        "mod_license" to project.property("mod_license"),
+        "mod_version" to project.property("mod_version"),
     )
     inputs.properties(replaceProperties)
     expand(replaceProperties)
@@ -103,6 +106,10 @@ tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"
 }
 
+tasks.named<Test>("test") {
+    useJUnitPlatform()
+}
+
 publishing {
     publications {
         create<MavenPublication>("mavenJava") {
@@ -111,7 +118,7 @@ publishing {
     }
     repositories {
         maven {
-            url = uri("file://${project.projectDir}/repo")
+            url = uri("repo")
         }
     }
 }
