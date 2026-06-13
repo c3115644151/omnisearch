@@ -11,4 +11,5 @@ public record TextStyle(
 ) {
     public static final TextStyle NORMAL = new TextStyle(false, false, false, false, null);
     public static final TextStyle BOLD = new TextStyle(true, false, false, false, null);
+    public static final TextStyle ITALIC = new TextStyle(false, true, false, false, null);
 }

@@ -2,26 +2,25 @@
 
 > **日期**: 2026-06-13
 > **项目根目录**: c:\Users\32800\Desktop\omnisearch
-> **本轮目标**: 实现 data.model（纯数据类） + search（状态管理），建立整条管线的基石
+> **本轮目标**: 实现 data.parser 层（Jsoup HTML → Document 解析器），打通 HTML 到结构化数据的转换管线
 
 ---
 
 ## 一、项目现状
 
 ### 已完成部分
-- 设计文档完整（docs/01~09）
-- 构建系统配置：NeoForge ModDevGradle 2.0.141 + Stonecutter 0.9.5（仅 1.21.1）
-- CLAUDE.md 项目规则已配置
-- mc-mod-api + mc-mod-mixin skills 已就绪
+- data.model 完整实现（DocNode 节点树 + 5 个数据类 record）
+- search 状态管理层完整实现（SearchState + Reducer + NavigationStack）
+- 构建系统适配 Gradle 9.x + NeoForge ModDevGradle 2.0.141
+- 169 个测试全部通过
 
 ### 存在问题
-- 源码层几乎空白：仅 OmnisearchMod.java 14 行入口类
-- 语言文件为空（en_us.json = {}）
-- 模板目录不存在（src/main/templates/）
-- 无任何测试
+- 无任何 HTML 解析能力——从 mcmod.cn 拿到的 HTML 字符串无法变成可渲染的 Document
+- 无 Jsoup 依赖（需添加）
+- mcmod.cn 的 HTML 结构未用当前页面验证（CSS 选择器基于旧代码推导，可能已过时）
 
 ### 技术债
-- 无（从零开始）
+- 无（第1轮已完成，NavigationStack 不可变性已修复）
 
 ---
 
@@ -29,119 +28,106 @@
 
 ### 设计/业务约束
 1. **Document 是整条管线的脊柱** — Fetcher 不知道怎么渲染，Renderer 不知道 HTML 长什么样
-2. **状态不可变** — SearchState 是 record，变更通过 Reducer 返回新实例。不用布尔标记，不用可变字段
-3. **HTML 不直接到渲染** — 必须经过 Document 中间层：HTML → Document → 渲染组件
-4. **Screen 不超过 ~80 行** — 只做布局和事件分发。逻辑在组件里，数据在 Repository 里，状态在 Reducer 里
-5. **绝不 @Overwrite** — 除非有充分理由且代码注释说明
+2. **HTML 不直接到渲染** — 必须经过 Document 中间层：HTML → Document → 渲染组件
+3. **Screen 不超过 ~80 行** — 只做布局和事件分发
+4. **绝不 @Overwrite** — 除非有充分理由且代码注释说明
 
 ### 代码约束
+5. **data.parser 包只依赖 Jsoup + data.model** — 纯 Java，零 MC 依赖
 6. **每个 Agent 只修改自己边界内的文件**，绝不触碰其他 Agent 的文件
-7. **data.model 包必须是纯 Java** — 零 MC 依赖，零外部库依赖（不引入 Jsoup 等）
-8. **所有 record 类必须用 `@Nullable` 标注可为空的字段**（jakarta.annotation.Nullable 或 jetbrains.annotations.Nullable）
+7. **Parser 必须容错** — 遇到无法解析的 HTML 结构时返回部分结果而非崩溃
 
 ### 测试纪律
-9. **所有实现必须包含对应测试**。data.model 和 search 可跑纯 JUnit，不依赖 MC 环境
-10. **禁止假绿**：测试必须包含边界用例。record 的构造/相等/toString 不是"测试"
-11. **测试类型**：纯单元测试（data.model + search 层不需要 MC 环境）
+8. **所有实现必须包含对应测试**
+9. **使用真实 mcmod.cn HTML 片段作为测试 fixture**（从旧代码或手动保存的页面中提取）
+10. **测试必须包含**：正常解析、部分匹配、完全不匹配的 HTML、空字符串、null
 
 ---
 
 ## 三、协作规则
 
 ### 依赖与等待
-- Agent B（search）依赖 Agent A（data.model）的数据类型。必须等 A 完成后才能开始 B
-- 等待期间 Agent 不启动，由 CEO 在验收 A 后再启动 B
+- 本波只有一个 Agent，无外部依赖（data.model 已完成）
 
 ### 进度汇报
-- 完成开发后，在本文档的"进度追踪"章节更新状态：⬜未启动 → 🔄进行中 → ✅已完成
-- 更新时简要说明：实现了什么、对外接口是否和契约一致、有没有偏离规格的地方
+- 完成开发后更新"进度追踪"章节的状态
 
 ### 禁止回退策略
-- 不得采取任何降低预期效果的回退策略。遇到困难如实汇报
+- 不得采取任何降低预期效果的回退策略
+- CSS 选择器基于旧代码推导可能需后续调整，但 parser 的结构（方法签名、异常处理、容错机制）必须一次做对
 
 ### 冲突处理
-- 只修改自己边界内的文件
-- 如果发现需要修改别人的文件才能完成自己的任务，在汇报中说明
+- 只修改 parser 边界内的文件
 
 ---
 
 ## 四、依赖图与调度顺序
 
 ```
-Agent A (data.model，无依赖)
-  └── Agent B (search，依赖 A 的 data.model 类型)
-
-调度顺序：
-  第一波：Agent A（data.model）
-  → CEO 验收 A →
-  第二波：Agent B（search）
+第2波：Agent C (data.parser，依赖 data.model)
+  └── 仅此一个 Agent，串行执行即可
 ```
 
 ---
 
 ## 五、团队定义
 
-### Agent A: data.model 纯数据类
-**代号**: data-model
+### Agent C: McmodParser HTML → Document 解析器
+**代号**: mcmod-parser
 **文件边界**:
-- `src/main/java/com/cy311/omnisearch/data/model/document/` 下所有文件
-- `src/main/java/com/cy311/omnisearch/data/model/SearchQuery.java`
-- `src/main/java/com/cy311/omnisearch/data/model/SearchHit.java`
-- `src/main/java/com/cy311/omnisearch/data/model/ItemPage.java`
-- `src/main/java/com/cy311/omnisearch/data/model/CaptchaContext.java`
-- 对应的测试文件在 `src/test/java/com/cy311/omnisearch/data/model/` 下
-**禁止触碰**: 任何其他包下的文件
-**依赖**: 无
+- `src/main/java/com/cy311/omnisearch/data/parser/McmodParser.java`
+- `src/main/java/com/cy311/omnisearch/data/parser/SearchResultParser.java`（可选拆分）
+- `src/main/java/com/cy311/omnisearch/data/parser/DocumentParser.java`（可选拆分）
+- `src/test/java/com/cy311/omnisearch/data/parser/` 下所有测试文件
+- `src/test/resources/html/` 下测试 fixture HTML 文件
+**禁止触碰**: 任何 data.model 下的文件（只引用，不修改）
+**依赖**: data.model（已完成）
 
 #### 任务背景
-设计文档 03_data_model.md 和 02_architecture.md 已定义了完整数据模型。这是整条管线的基石——所有模块都依赖它。
+McmodFetcher 拿到 mcmod.cn 的 HTML 字符串后，需要通过 Parser 转为 Document 结构化数据。这是 HTML→Document 的转换步骤。CSS 选择器基于旧 HtmlRenderer 990 行代码推导，见 docs/03_data_model.md 的映射表。
 
 #### 最终规格
-1. 实现 Document 节点树（DocNode 为抽象基类，所有节点类继承它）
-2. 实现 SearchQuery / SearchHit / ItemPage / CaptchaContext 数据类
-3. 所有类在 `data.model` 包下，纯 Java，无任何外部依赖（含 MC API）
-4. 实现 DocNodeVisitor<T> 接口
-5. Document 支持 JSON 序列化（使用 Gson 注解，Gson 是 MC 自带）
+1. 实现 McmodParser 类，包含以下方法：
+   - `List<SearchHit> parseSearchResults(String html)` — 解析搜索结果页 HTML
+   - `Document parseItemPage(String html, String url)` — 解析物品详情页 HTML
+   - `Document parseModPage(String html, String url)` — 解析模组详情页 HTML
+2. 所有方法静态，不依赖实例状态（Parser 是纯函数）
+3. 遇到无法匹配的选择器时返回空/默认值，不抛异常
+4. 使用 Jsoup 解析 HTML
+
+#### 解析规则（基于旧代码推导，待验证）
+
+**搜索结果页**：从搜索结果列表中提取每个条目的 id、name、type、sourceMod。
+- 每个搜索结果是一个带有链接的列表项
+- 链接格式：`/item/{id}.html` 或 `/mod/{id}.html`
+- type 从 URL 路径推断（`/item/` → "item", `/mod/` → "mod"）
+
+**物品详情页**（基于 03_data_model.md 的映射表）：
+| HTML 结构 | Document 节点 | 提取说明 |
+|-----------|-------------|----------|
+| 标题元素 | HeadingNode(1) | 页面主标题 |
+| 来源 mod 信息 | ParagraphNode | 可能包含 StyledText |
+| 属性表格 | TableNode | 键值对表，headers=["属性","值"] |
+| 描述文字 | ParagraphNode | 多段文字 |
+| img (物品图标) | ImageNode | src + alt |
+| a[href] | LinkNode | 链接 |
+| ul/ol | ListNode | 列表 |
+| hr | DividerNode | 分割线 |
+| 章节标题 | SectionNode | 分组标题 |
+
+**模组详情页**：结构类似物品页，但标题是模组名，表格内容不同。
 
 #### 对外接口
 ```java
-// Document 节点树
-DocNode root = new ParagraphNode(List.of(new TextNode("hello")));
-String json = new Gson().toJson(root);  // 可序列化
-DocNode deserialized = new Gson().fromJson(json, DocNode.class);
+var parser = new McmodParser();
 
-// 数据类
-var query = new SearchQuery("娜迦");
-var hit = new SearchHit("item/123", "娜迦鳞片", "item", "暮色森林");
-var page = new ItemPage("item/123", "娜迦鳞片", "暮色森林", document, "https://www.mcmod.cn/item/123.html");
-```
+// 搜索解析
+String searchHtml = "<html>...</html>";  // 从 mcmod.cn/s?key=娜迦 取回
+List<SearchHit> hits = parser.parseSearchResults(searchHtml);
 
----
-
-### Agent B: search 状态管理
-**代号**: search-state
-**文件边界**:
-- `src/main/java/com/cy311/omnisearch/search/` 下所有文件
-- `src/test/java/com/cy311/omnisearch/search/` 下测试文件
-**禁止触碰**: data.model 包（只引用，不修改）
-**依赖**: Agent A 产出的 data.model 类
-
-#### 任务背景
-设计文档 05_state_management.md 已定义完整的状态管理和导航方案。
-
-#### 最终规格
-1. 实现 SearchState record（不可变状态）
-2. 实现 NavigationStack（导航栈）
-3. 实现 SearchEvent sealed interface + 所有实现
-4. 实现 SearchReducer 纯函数
-5. 所有逻辑纯函数，无副作用
-
-#### 对外接口
-```java
-var state = SearchState.initial();
-var event = new SearchEvent.QueryChanged("娜迦");
-var nextState = SearchReducer.reduce(state, event);
-// nextState.query() → SearchQuery("娜迦")
+// 详情页解析
+String itemHtml = "<html>...</html>";  // 从 mcmod.cn/item/123.html 取回
+Document doc = parser.parseItemPage(itemHtml, "https://www.mcmod.cn/item/123.html");
 ```
 
 ---
@@ -150,109 +136,24 @@ var nextState = SearchReducer.reduce(state, event);
 
 ### 接口清单
 
-#### data.model 对外接口
-
+#### McmodParser 对外接口
 ```java
-// 文件: src/main/java/com/cy311/omnisearch/data/model/document/
-
-public record Document(
-    String title,
-    @Nullable String sourceMod,
-    @Nullable String sourceUrl,
-    List<DocNode> content
-) {}
-
-public abstract class DocNode {
-    public abstract <T> T accept(DocNodeVisitor<T> visitor);
+public class McmodParser {
+    public List<SearchHit> parseSearchResults(String html);
+    public Document parseItemPage(String html, String url);
+    public Document parseModPage(String html, String url);
 }
-
-// 具体节点类:
-public class HeadingNode extends DocNode { ... }     // level, children
-public class ParagraphNode extends DocNode { ... }    // children
-public class TableNode extends DocNode { ... }        // headers, rows
-public class ListNode extends DocNode { ... }         // ordered, items
-public class ImageNode extends DocNode { ... }        // url, alt, localPath
-public class LinkNode extends DocNode { ... }         // url, children
-public class DividerNode extends DocNode { ... }      // 无字段
-public class SectionNode extends DocNode { ... }      // title, children
-
-// 行内节点:
-public class TextNode extends DocNode { ... }         // text (Leaf)
-public class StyledTextNode extends DocNode { ... }   // text, style (Leaf)
-public class ImageInlineNode extends DocNode { ... }  // url, alt (Leaf)
-
-// Visitor:
-public interface DocNodeVisitor<T> {
-    T visitHeading(HeadingNode node);
-    T visitParagraph(ParagraphNode node);
-    T visitTable(TableNode node);
-    T visitList(ListNode node);
-    T visitImage(ImageNode node);
-    T visitLink(LinkNode node);
-    T visitDivider(DividerNode node);
-    T visitSection(SectionNode node);
-    // 行内节点
-    T visitText(TextNode node);
-    T visitStyledText(StyledTextNode node);
-    T visitImageInline(ImageInlineNode node);
-}
-
-// 文件: src/main/java/com/cy311/omnisearch/data/model/
-public record SearchQuery(String text) {}
-public record SearchHit(String id, String name, String type, String sourceMod) {}
-public record ItemPage(String id, String title, String sourceMod, Document document, String url) {}
-public record CaptchaContext(String captchaImageUrl, String captchaId) {}
 ```
 
-#### search 对外接口
-
-```java
-// 文件: src/main/java/com/cy311/omnisearch/search/
-public record SearchState(
-    Page currentPage,
-    SearchQuery query,
-    List<SearchHit> results,
-    @Nullable ItemPage detailPage,
-    NavigationStack navStack,
-    LoadingState loading,
-    @Nullable String errorMessage,
-    @Nullable CaptchaContext captcha
-) {
-    public enum Page { SEARCH, RESULTS, DETAIL }
-    public enum LoadingState { IDLE, LOADING, CAPTCHA_REQUIRED, ERROR }
-    public static SearchState initial() { ... }
-    // with* 便捷方法
-}
-
-public sealed interface SearchEvent {
-    record QueryChanged(String query) implements SearchEvent {}
-    record SearchSubmitted() implements SearchEvent {}
-    record ResultSelected(int index) implements SearchEvent {}
-    record DetailLoaded(ItemPage page) implements SearchEvent {}
-    record LinkClicked(String url) implements SearchEvent {}
-    record GoBack() implements SearchEvent {}
-    record CaptchaSolved(String solution) implements SearchEvent {}
-    record ErrorOccurred(String message) implements SearchEvent {}
-    record Dismiss() implements SearchEvent {}
-}
-
-public class NavigationStack {
-    public SearchState push(SearchState state);
-    public SearchState pop();
-    public boolean canGoBack();
-}
-
-public class SearchReducer {
-    public static SearchState reduce(SearchState current, SearchEvent event);
-}
-```
+输入：String html（原始 HTML 字符串）
+输出：强类型的 data.model 对象
 
 ### 接缝定义
 
 | 接缝位置 | 上游输出 | 下游期望 | 转换责任方 |
 |---------|---------|---------|-----------|
-| data.model → search | DocNode 节点树 + SearchHit/ItemPage/SearchQuery | SearchState 引用这些类型 | search（直接引用，不转换） |
-| search → gui | SearchState record + SearchEvent sealed interface | Screen 读状态、发事件 | gui（Screen） |
+| McmodHttpClient → McmodParser | String html | List<SearchHit> / Document | McmodParser |
+| McmodParser → SearchRepository | List<SearchHit> / Document | 缓存 or 返回给调用方 | SearchRepository |
 
 ---
 
@@ -260,8 +161,7 @@ public class SearchReducer {
 
 | Agent | 状态 | 完成说明 |
 |-------|------|---------|
-| A: data-model | ✅已完成 | 16 个源文件：DocNode 节点树（11 个子类+Visitor+Adapter）+ 4 个数据类 record。64 测试通过。 |
-| B: search-state | ✅已完成 | 4 个源文件：SearchState/SearchEvent/NavigationStack/SearchReducer。89 测试通过。|
+| C: mcmod-parser | ✅ 完成 | build.gradle.kts 添加 Jsoup 1.19.1；TextStyle 添加 ITALIC 常量；McmodParser 实现搜索/物品/模组页解析 + HTML→DocNode 递归转换；4 测试类 38 用例全部通过 |
 
 ---
 
@@ -270,10 +170,18 @@ public class SearchReducer {
 ### 2026-06-13 第1轮：data.model + search 基石实现
 - **结果**：✅ 完成
 - **产出**：
-  - data.model: DocNode 节点树（11 个子类 + DocNodeVisitor + DocNodeAdapterFactory）
-  - data.model: Document/SearchQuery/SearchHit/ItemPage/CaptchaContext 5 个 record
-  - search: SearchState record + SearchEvent sealed interface + NavigationStack + SearchReducer
-  - 测试: 7 个测试类，共 153 个测试
-  - 构建: build.gradle.kts 兼容性修复（Gradle 9.x + NeoForge ModDevGradle）
+  - data.model: DocNode 节点树 + 5 个数据类 record
+  - search: SearchState/SearchEvent/NavigationStack/SearchReducer
+  - 测试: 7 个测试类，169 个测试
 - **遗留技术债**：无
-- **经验教训**：Gradle 9.x 的 NeoForge ModDevGradle 有 API 变更（runs block 的 DSL），需要测试验证构建兼容性
+
+### 2026-06-13 第2轮：data.parser HTML→Document 解析器
+- **结果**：✅ 完成
+- **产出**：
+  - McmodParser: parseSearchResults / parseItemPage / parseModPage 三个方法
+  - HTML→DocNode 递归转换引擎（块级 + 行内节点）
+  - 4 个测试类，38 个测试用例
+  - Jsoup 1.19.1 依赖
+  - TextStyle ITALIC 常量
+- **关键知识获取**：通过 gh api (7890 代理) 获取 MapleSugar365 fork 的 McmodFetcher 源码，验证了 CSS 选择器和解析逻辑
+- **遗留技术债**：CSS 选择器基于旧代码推导，未用 mcmod.cn 当前页面验证（P0 问题，后续需手动验证）

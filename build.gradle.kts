@@ -73,10 +73,12 @@ configurations {
 
 dependencies {
     implementation("org.jetbrains:annotations:26.0.2")
+    implementation("org.jsoup:jsoup:1.19.1")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     testImplementation("com.google.code.gson:gson:2.11.0")
+    testImplementation("org.jsoup:jsoup:1.19.1")
 }
 
 val generateModMetadata = tasks.register("generateModMetadata", ProcessResources::class) {
