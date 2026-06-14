@@ -29,19 +29,14 @@ public class CaptchaDialogWidget {
     private static final int SUBTITLE_GRAY = 0xFF555555;
     private static final int TEXT_WHITE = 0xFFFFFFFF;
     private static final int PLACEHOLDER_BG = 0xFF666666;
-    private static final int PLACEHOLDER_INNER = 0xFF444444;
     private static final int PLACEHOLDER_TEXT = 0xFFAAAAAA;
-    private static final int BUTTON_BG = 0xFF6C6C6C;
-    private static final int BUTTON_TEXT = 0xFFFFFFFF;
+    private static final int PLACEHOLDER_INNER = 0xFF444444;
 
     private static final int DIALOG_WIDTH = 240;
     private static final int DIALOG_PADDING = 8;
     private static final int CAPTCHA_WIDTH = 200;
     private static final int CAPTCHA_HEIGHT = 60;
     private static final int TITLE_HEIGHT = 20;
-    private static final int BUTTON_WIDTH = 60;
-    private static final int BUTTON_HEIGHT = 20;
-    private static final int INPUT_HEIGHT = 20;
     private static final int ELEMENT_GAP = 8;
     private static final int BORDER = 1;
 
@@ -97,26 +92,8 @@ public class CaptchaDialogWidget {
         int placeholderY = subtitleY + ELEMENT_GAP + 4;
         drawCaptchaPlaceholder(gui, placeholderX, placeholderY, CAPTCHA_WIDTH, CAPTCHA_HEIGHT);
 
-        // ---- Input field area (black background rectangle) ----
-        int inputY = placeholderY + CAPTCHA_HEIGHT + ELEMENT_GAP;
-        int inputWidth = dialogWidth - (DIALOG_PADDING + BORDER) * 2;
-        gui.fill(contentX, inputY, contentX + inputWidth, inputY + INPUT_HEIGHT, 0xFF000000);
-        // Input field inner border
-        gui.hLine(contentX, contentX + inputWidth - 1, inputY, BORDER_DARK);
-        gui.vLine(contentX, inputY, inputY + INPUT_HEIGHT - 1, BORDER_DARK);
-        gui.hLine(contentX, contentX + inputWidth - 1, inputY + INPUT_HEIGHT - 1, BORDER_WHITE);
-        gui.vLine(contentX + inputWidth - 1, inputY, inputY + INPUT_HEIGHT - 1, BORDER_WHITE);
-
-        // ---- Submit button ----
-        int buttonX = x + (dialogWidth - BUTTON_WIDTH) / 2;
-        int buttonY = inputY + INPUT_HEIGHT + ELEMENT_GAP;
-        drawSubmitButton(gui, buttonX, buttonY, BUTTON_WIDTH, BUTTON_HEIGHT);
-
         // ---- Captcha ID (hidden info, displayed for debugging) ----
-        String idText = "ID: " + captcha.captchaId();
-        int idTextWidth = font.width(idText);
-        gui.drawString(font, idText, x + dialogWidth - DIALOG_PADDING - idTextWidth,
-                buttonY + BUTTON_HEIGHT + 4, 0xFF888888, false);
+        // Input and submit button are managed by the Screen layer.
     }
 
     private void drawCaptchaPlaceholder(GuiGraphics gui, int x, int y, int width, int height) {
@@ -135,37 +112,26 @@ public class CaptchaDialogWidget {
         gui.drawCenteredString(font, "CAPTCHA", x + width / 2, y + (height - font.lineHeight) / 2, PLACEHOLDER_TEXT);
     }
 
-    private void drawSubmitButton(GuiGraphics gui, int x, int y, int width, int height) {
-        // Button border (classic MC button style)
-        gui.hLine(x, x + width - 1, y, BORDER_WHITE);
-        gui.vLine(x, y, y + height - 1, BORDER_WHITE);
-        gui.hLine(x, x + width - 1, y + height - 1, BORDER_DARK);
-        gui.vLine(x + width - 1, y, y + height - 1, BORDER_DARK);
-
-        // Button background
-        gui.fill(x + 1, y + 1, x + width - 1, y + height - 1, BUTTON_BG);
-
-        // Button text centered
-        gui.drawCenteredString(font, "提交", x + width / 2, y + (height - font.lineHeight) / 2, BUTTON_TEXT);
-    }
-
     /**
      * Returns the total height of the dialog based on its content layout.
      */
     public int computeDialogHeight() {
-        int titleArea = DIALOG_PADDING + BORDER + TITLE_HEIGHT + (font.lineHeight + 2); // title + subtitle
+        int titleArea = DIALOG_PADDING + BORDER + TITLE_HEIGHT + (font.lineHeight + 2);
         int placeholderArea = CAPTCHA_HEIGHT;
-        int inputArea = INPUT_HEIGHT;
-        int buttonArea = BUTTON_HEIGHT;
-        int totalContent = titleArea + ELEMENT_GAP + 4 + placeholderArea + ELEMENT_GAP
-                + inputArea + ELEMENT_GAP + buttonArea + 4 + font.lineHeight + DIALOG_PADDING;
-        return totalContent;
+        return titleArea + ELEMENT_GAP + 4 + placeholderArea + ELEMENT_GAP + 4 + DIALOG_PADDING;
+    }
+
+    public int getDialogWidth() {
+        return DIALOG_WIDTH;
     }
 
     /**
-     * Returns the fixed dialog width.
+     * Returns the bounds of the CAPTCHA image area: {x, y, width, height}.
      */
-    public int getDialogWidth() {
-        return DIALOG_WIDTH;
+    public int[] getImageBounds(int dialogX, int dialogY) {
+        int placeholderX = dialogX + (DIALOG_WIDTH - CAPTCHA_WIDTH) / 2;
+        int subtitleY = dialogY + DIALOG_PADDING + BORDER + TITLE_HEIGHT;
+        int placeholderY = subtitleY + ELEMENT_GAP + 4;
+        return new int[]{placeholderX, placeholderY, CAPTCHA_WIDTH, CAPTCHA_HEIGHT};
     }
 }

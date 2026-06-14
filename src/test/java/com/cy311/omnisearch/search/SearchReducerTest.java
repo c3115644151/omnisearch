@@ -238,7 +238,7 @@ class SearchReducerTest {
     @Test
     void captchaSolved_clearsCaptchaAndSetsLoading() {
         var state = SearchState.initial()
-            .withCaptcha(new CaptchaContext("url", "id"))
+            .withCaptcha(new CaptchaContext("url", "id", "answerUrl"))
             .withLoading(SearchState.LoadingState.CAPTCHA_REQUIRED);
         var event = new SearchEvent.CaptchaSolved("solution");
         var result = SearchReducer.reduce(state, event);
@@ -252,7 +252,7 @@ class SearchReducerTest {
             .withPage(SearchState.Page.RESULTS)
             .withQuery(new SearchQuery("test"))
             .withResults(List.of(new SearchHit("id", "name", "type", "mod")))
-            .withCaptcha(new CaptchaContext("url", "id"));
+            .withCaptcha(new CaptchaContext("url", "id", "answerUrl"));
         var event = new SearchEvent.CaptchaSolved("solution");
         var result = SearchReducer.reduce(state, event);
         assertEquals(SearchState.Page.RESULTS, result.currentPage());

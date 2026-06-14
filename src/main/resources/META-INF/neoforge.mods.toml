@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="MIT"
+
+[[mods]]
+modId="omnisearch"
+version="2.0.0"
+displayName="Omnisearch"
+authors="cy311"
+description='''
+Search and browse mcmod.cn in-game
+'''
+
+[[dependencies.omnisearch]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.0.167,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.omnisearch]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21,1.22)"
+    ordering="NONE"
+    side="BOTH"

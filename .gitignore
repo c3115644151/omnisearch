@@ -15,6 +15,11 @@ out/
 
 # Minecraft runs
 runs/
+run/
+
+# Temporary test artifacts (never commit)
+captcha.html
+test_*.java
 
 # Generated resources
 src/generated/resources/

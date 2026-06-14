@@ -1,32 +1,19 @@
 package com.cy311.omnisearch.data.source;
 
 import com.cy311.omnisearch.data.model.CaptchaContext;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Detects and parses mcmod.cn CAPTCHA challenge pages.
  * <p>
- * Based on verified patterns from MapleSugar365 fork.
- * Pure Java, zero MC dependency.
- * <p>
- * Usage:
- * <pre>{@code
- * McmodCaptchaHandler handler = new McmodCaptchaHandler();
- * if (handler.isCaptchaPage(html)) {
- *     CaptchaContext ctx = handler.parseCaptcha(html, pageUrl);
- *     // render ctx.captchaImageUrl() as image, prompt user with ctx.captchaId()
- * }
- * }</pre>
+ * Uses Jsoup for robust HTML parsing instead of fragile Regex.
  */
 public class McmodCaptchaHandler {
-
-    private static final Pattern CAPTCHA_CHECK_PATTERN = Pattern.compile("安全验证");
-    private static final Pattern CAPTCHA_IMAGE_PATTERN = Pattern.compile(
-        "<img\\s+id=\"captchaImage\"\\s+[^>]*src=\"data:image/png;base64,([^\"]+)\"");
-    private static final Pattern CAPTCHA_QUESTION_PATTERN = Pattern.compile(
-        "<p\\s+class=\"captcha-question\"[^>]*>\\s*图中有多少个\\s*<b\\s+class=\"item\"[^>]*>([^<]+)</b>\\s*\\?\\s*</p>");
 
     /**
      * Detects if the given HTML is a mcmod.cn CAPTCHA challenge page.
@@ -35,20 +22,15 @@ public class McmodCaptchaHandler {
      * @return true if the page is a CAPTCHA challenge
      */
     public boolean isCaptchaPage(String html) {
-        return html != null && CAPTCHA_CHECK_PATTERN.matcher(html).find()
-            && html.contains("captcha-image-container");
+        if (html == null) return false;
+        return html.contains("安全验证") && html.contains("captcha");
     }
 
     /**
      * Parses a CAPTCHA page HTML into a CaptchaContext.
-     * <p>
-     * {@link CaptchaContext#captchaImageUrl()} stores the full data URI
-     * ({@code data:image/png;base64,...}) of the CAPTCHA image.
-     * {@link CaptchaContext#captchaId()} stores the question text
-     * (e.g. "图中有多少个苦力怕").
      *
      * @param html    The CAPTCHA page HTML
-     * @param pageUrl The URL that triggered the CAPTCHA (reserved for future use)
+     * @param pageUrl The URL that triggered the CAPTCHA
      * @return CaptchaContext with image data and question, or null if parsing fails
      */
     public CaptchaContext parseCaptcha(String html, String pageUrl) {
@@ -56,20 +38,51 @@ public class McmodCaptchaHandler {
             return null;
         }
 
-        Matcher imgMatcher = CAPTCHA_IMAGE_PATTERN.matcher(html);
-        Matcher questionMatcher = CAPTCHA_QUESTION_PATTERN.matcher(html);
+        Document doc = Jsoup.parse(html, pageUrl);
 
-        if (!imgMatcher.find() || !questionMatcher.find()) {
-            return null;
+        // Find image: <img src="data:image/png;base64,...">
+        Element img = doc.selectFirst("img[src^=data:image/png;base64]");
+        if (img == null) {
+            // fallback: any img with captcha in class/id
+            img = doc.selectFirst("img[class*=captcha], img[id*=captcha]");
+            if (img == null || !img.attr("src").startsWith("data:image/png")) {
+                return null;
+            }
+        }
+        String dataUri = img.attr("src");
+
+        // Find question text — normalize whitespace, strip trailing "?"
+        // eslint-disable-next-line
+        // E.g. "图中有多少个 苦力怕 ?" → "图中有多少个苦力怕"
+        String question = null;
+        Element questionEl = doc.selectFirst("p:contains(图中有多少个)");
+        if (questionEl != null) {
+            question = questionEl.text().replaceAll("\\s+", ""); // squash whitespace
+        } else {
+            String bodyText = doc.body().text();
+            int idx = bodyText.indexOf("图中有多少个");
+            if (idx != -1) {
+                question = bodyText.substring(idx).replaceAll("\\s+", "");
+            }
+        }
+        if (question == null || question.isBlank()) return null;
+        // Strip trailing question marks (both half/full width)
+        question = question.replaceAll("[？?]+$", "").trim();
+
+        // Action URL and hidden fields
+        Element form = doc.selectFirst("form");
+        String answerUrl = pageUrl;
+        Map<String, String> hiddenFields = new HashMap<>();
+        if (form != null) {
+            if (form.hasAttr("action")) {
+                answerUrl = form.absUrl("action");
+                if (answerUrl.isBlank()) answerUrl = pageUrl;
+            }
+            for (Element input : form.select("input[type=hidden]")) {
+                hiddenFields.put(input.attr("name"), input.attr("value"));
+            }
         }
 
-        String imageBase64 = imgMatcher.group(1);
-        String itemName = questionMatcher.group(1).trim();
-        String question = "图中有多少个" + itemName;
-
-        // captchaImageUrl stores the full data URI for direct rendering
-        String dataUri = "data:image/png;base64," + imageBase64;
-
-        return new CaptchaContext(dataUri, question);
+        return new CaptchaContext(dataUri, question, answerUrl, hiddenFields);
     }
 }

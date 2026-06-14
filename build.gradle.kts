@@ -37,13 +37,16 @@ neoForge {
 
     runs {
         register("client") {
+            type = "client"
             systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
         }
         register("server") {
+            type = "server"
             programArgument("--nogui")
             systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
         }
         register("data") {
+            type = "data"
             programArguments.addAll(
                 "--mod", property("mod_id") as String,
                 "--all",
@@ -62,7 +65,6 @@ neoForge {
             sourceSet(sourceSets.main.get())
         }
     }
-
 }
 
 configurations {
@@ -75,6 +77,7 @@ configurations {
 dependencies {
     implementation("org.jetbrains:annotations:26.0.2")
     implementation("org.jsoup:jsoup:1.19.1")
+    add("additionalRuntimeClasspath", "org.jsoup:jsoup:1.19.1")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -91,7 +94,7 @@ sourceSets {
     }
 }
 
-val generateModMetadata = tasks.register("generateModMetadata", ProcessResources::class) {
+val generateModMetadata = tasks.register("generateModMetadata", Sync::class) {
     val replaceProperties = mapOf(
         "minecraft_version" to project.property("minecraft_version"),
         "minecraft_version_range" to project.property("minecraft_version_range"),
@@ -103,16 +106,20 @@ val generateModMetadata = tasks.register("generateModMetadata", ProcessResources
         "mod_version" to project.property("mod_version"),
     )
     inputs.properties(replaceProperties)
-    expand(replaceProperties)
     from("src/main/templates")
-    into("build/generated/sources/modMetadata")
+    into(layout.buildDirectory.dir("generated/resources/modMetadata"))
+    expand(replaceProperties)
 }
 
 sourceSets.main {
-    resources.srcDir(generateModMetadata)
+    resources.srcDir(layout.buildDirectory.dir("generated/resources/modMetadata"))
 }
 
 neoForge.ideSyncTask(generateModMetadata)
+
+tasks.named("processResources") {
+    dependsOn(generateModMetadata)
+}
 
 tasks.withType<JavaCompile> {
     options.encoding = "UTF-8"

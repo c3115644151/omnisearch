@@ -155,7 +155,7 @@ class OmnisearchScreenTest {
     @Test
     void captchaSolved_clearsCaptchaAndSetsLoading() {
         var state = SearchState.initial()
-            .withCaptcha(new CaptchaContext("url", "id"))
+            .withCaptcha(new CaptchaContext("url", "id", "answerUrl"))
             .withLoading(SearchState.LoadingState.CAPTCHA_REQUIRED);
         var result = SearchReducer.reduce(state, new SearchEvent.CaptchaSolved("solution"));
         assertNull(result.captcha());

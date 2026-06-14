@@ -202,14 +202,14 @@ class McmodHttpClientTest {
     @Test
     void nullAnswerUrlReturnsEmpty() throws Exception {
         McmodHttpClient client = new McmodHttpClient();
-        String result = client.submitCaptcha(null, "answer").get();
+        String result = client.submitCaptcha(null, "answer", null).get();
         assertEquals("", result);
     }
 
     @Test
     void blankAnswerUrlReturnsEmpty() throws Exception {
         McmodHttpClient client = new McmodHttpClient();
-        String result = client.submitCaptcha("  ", "answer").get();
+        String result = client.submitCaptcha("  ", "answer", null).get();
         assertEquals("", result);
     }
 
@@ -221,7 +221,7 @@ class McmodHttpClientTest {
     void unreachableHostThrowsException() {
         McmodHttpClient client = new McmodHttpClient();
         // submitCaptcha takes a raw URL, so we can test against an unreachable address
-        CompletableFuture<String> future = client.submitCaptcha("http://localhost:1/", "test");
+        CompletableFuture<String> future = client.submitCaptcha("http://localhost:1/", "test", null);
         assertThrows(CompletionException.class, future::join);
     }
 
@@ -231,7 +231,7 @@ class McmodHttpClientTest {
         // getItemPage builds URL from its internal builder, so malformed URLs
         // shouldn't normally happen. Test via an edge case in executeGet.
         // Use submitCaptcha with a clearly malformed URL
-        CompletableFuture<String> future = client.submitCaptcha("not-a-valid-url", "test");
+        CompletableFuture<String> future = client.submitCaptcha("not-a-valid-url", "test", null);
         assertThrows(CompletionException.class, future::join);
     }
 }

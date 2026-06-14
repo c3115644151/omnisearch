@@ -48,6 +48,7 @@ public class CacheLayer {
     }
 
     public void putSearchResults(SearchQuery query, List<SearchHit> results) {
+        if (results == null || results.isEmpty()) return; // don't cache empty results
         Path fresh = searchPath(query);
         Path stale = staleSearchPath(query);
         moveToStale(fresh, stale);
@@ -89,7 +90,9 @@ public class CacheLayer {
             String json = Files.readString(path);
             Type entryType = TypeToken.getParameterized(CacheEntry.class, dataType).getType();
             CacheEntry<T> entry = gson.fromJson(json, entryType);
-            if (entry == null) return null;
+            if (entry == null || entry.data() == null) return null;
+            // Treat empty lists as cache miss (prevent stale empty cache from blocking fetches)
+            if (entry.data() instanceof List && ((List<?>) entry.data()).isEmpty()) return null;
             long age = System.currentTimeMillis() - entry.timestamp();
             if (age > ttlMs) return null; // expired
             return entry.data();

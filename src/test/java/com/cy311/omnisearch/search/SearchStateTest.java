@@ -121,16 +121,17 @@ class SearchStateTest {
     @Test
     void withCaptcha_returnsNewInstance() {
         var state = SearchState.initial();
-        var captcha = new CaptchaContext("url", "id");
+        var captcha = new CaptchaContext("url", "id", "answerUrl");
         var modified = state.withCaptcha(captcha);
         assertNotSame(state, modified);
         assertNull(state.captcha());
         assertEquals(captcha, modified.captcha());
+        assertEquals("answerUrl", modified.captcha().answerUrl());
     }
 
     @Test
     void withCaptcha_canSetNull() {
-        var state = new CaptchaContext("url", "id");
+        var state = new CaptchaContext("url", "id", "answerUrl");
         var original = SearchState.initial().withCaptcha(state);
         var modified = original.withCaptcha(null);
         assertNull(modified.captcha());

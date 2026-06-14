@@ -70,15 +70,16 @@ class SimpleDataTest {
 
     @Test
     void captchaContext_creates() {
-        var ctx = new CaptchaContext("https://example.com/captcha.png", "captcha-123");
+        var ctx = new CaptchaContext("https://example.com/captcha.png", "captcha-123", "https://example.com/captcha/submit");
         assertEquals("https://example.com/captcha.png", ctx.captchaImageUrl());
         assertEquals("captcha-123", ctx.captchaId());
+        assertEquals("https://example.com/captcha/submit", ctx.answerUrl());
     }
 
     @Test
     void captchaContext_equality() {
-        var a = new CaptchaContext("url1", "id1");
-        var b = new CaptchaContext("url1", "id1");
+        var a = new CaptchaContext("url1", "id1", "ans1");
+        var b = new CaptchaContext("url1", "id1", "ans1");
         assertEquals(a, b);
     }
 

@@ -56,7 +56,7 @@ public class McmodDataSource implements DataSource {
         return client.search(query.text())
             .thenApply(html -> {
                 if (html.isBlank()) return List.<SearchHit>of();
-                checkCaptcha(html, buildSearchUrl(query.text()));
+                checkCaptcha(html, McmodHttpClient.buildSearchUrl(query.text()));
                 return parser.parseSearchResults(html);
             });
     }
@@ -105,13 +105,86 @@ public class McmodDataSource implements DataSource {
             CaptchaContext ctx = captchaHandler.parseCaptcha(html, pageUrl);
             if (ctx != null) {
                 throw new CaptchaRequiredException(ctx);
+            } else {
+                throw new RuntimeException("检测到 mcmod.cn 验证码，但解析失败，可能页面结构已更改。");
             }
         }
     }
 
-    private static String buildSearchUrl(String query) {
-        // Minimal URL for CAPTCHA answer submission context
-        return BASE_URL + "/s?key=" + java.net.URLEncoder.encode(query, java.nio.charset.StandardCharsets.UTF_8);
+    /**
+     * Submits a CAPTCHA answer and retries the original search.
+     * <p>
+     * After POSTing the captcha answer (with followRedirects=false),
+     * the 302 redirect's Set-Cookie is saved in the HTTP client.
+     * We then retry the search with the now-valid cookies.
+     */
+    public CompletableFuture<List<SearchHit>> submitCaptcha(SearchQuery originalQuery, CaptchaContext captcha, String answer) {
+        return client.submitCaptcha(captcha.answerUrl(), answer, captcha.hiddenFields())
+            .thenCompose(html -> {
+                if (html == null || html.isBlank()) return CompletableFuture.completedFuture(List.of());
+                // Check if response is another captcha page (wrong answer)
+                if (captchaHandler.isCaptchaPage(html)) {
+                    CaptchaContext newCtx = captchaHandler.parseCaptcha(html, captcha.answerUrl());
+                    if (newCtx != null) {
+                        throw new CaptchaRequiredException(newCtx);
+                    } else {
+                        throw new RuntimeException("检测到 mcmod.cn 验证码，但解析失败，可能页面结构已更改。");
+                    }
+                }
+                // Success: cookies are now valid, retry the search
+                return client.search(originalQuery.text())
+                    .thenApply(searchHtml -> {
+                        if (searchHtml.isBlank()) return List.<SearchHit>of();
+                        // Guard against getting captcha again
+                        if (captchaHandler.isCaptchaPage(searchHtml)) {
+                            CaptchaContext newCtx = captchaHandler.parseCaptcha(searchHtml, McmodHttpClient.buildSearchUrl(originalQuery.text()));
+                            if (newCtx != null) {
+                                throw new CaptchaRequiredException(newCtx);
+                            }
+                        }
+                        return parser.parseSearchResults(searchHtml);
+                    });
+            });
+    }
+
+    /**
+     * Submits a CAPTCHA answer and retries the original page request.
+     */
+    public CompletableFuture<ItemPage> submitCaptchaForPage(String pageId, CaptchaContext captcha, String answer) {
+        String url = BASE_URL + "/" + pageId + ".html";
+        return client.submitCaptcha(captcha.answerUrl(), answer, captcha.hiddenFields())
+            .thenCompose(html -> {
+                if (html == null || html.isBlank()) return CompletableFuture.completedFuture(null);
+                if (captchaHandler.isCaptchaPage(html)) {
+                    CaptchaContext newCtx = captchaHandler.parseCaptcha(html, captcha.answerUrl());
+                    if (newCtx != null) {
+                        throw new CaptchaRequiredException(newCtx);
+                    } else {
+                        throw new RuntimeException("检测到 mcmod.cn 验证码，但解析失败，可能页面结构已更改。");
+                    }
+                }
+                // Success: cookies now valid, retry the page request
+                String itemId = pageId.startsWith("item/") ? pageId.substring("item/".length()) : "";
+                CompletableFuture<String> pageFuture = pageId.startsWith("item/")
+                    ? client.getItemPage(itemId)
+                    : client.getModPage(pageId.startsWith("class/") ? pageId.substring("class/".length()) : "");
+                return pageFuture.thenApply(pageHtml -> {
+                    if (pageHtml == null || pageHtml.isBlank()) return null;
+                    if (captchaHandler.isCaptchaPage(pageHtml)) {
+                        CaptchaContext newCtx = captchaHandler.parseCaptcha(pageHtml, url);
+                        if (newCtx != null) {
+                            throw new CaptchaRequiredException(newCtx);
+                        }
+                    }
+                    Document doc;
+                    if (pageId.startsWith("item/")) {
+                        doc = parser.parseItemPage(pageHtml, url);
+                    } else {
+                        doc = parser.parseModPage(pageHtml, url);
+                    }
+                    return new ItemPage(pageId, doc.title(), doc.sourceMod(), doc, url);
+                });
+            });
     }
 
     @Override

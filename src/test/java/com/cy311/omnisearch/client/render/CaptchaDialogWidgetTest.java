@@ -6,6 +6,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import org.junit.jupiter.api.Test;
 
 import static com.cy311.omnisearch.client.render.RenderTestUtil.*;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.mockito.Mockito.verify;
 
 class CaptchaDialogWidgetTest {
@@ -38,7 +39,8 @@ class CaptchaDialogWidgetTest {
 
     private final CaptchaContext captcha = new CaptchaContext(
         "https://example.com/captcha.png",
-        "captcha_abc123"
+        "captcha_abc123",
+        "https://example.com/captcha/submit"
     );
 
     @Test
@@ -110,65 +112,29 @@ class CaptchaDialogWidgetTest {
     }
 
     @Test
-    void render_rendersCaptchaId() {
+    void render_rendersCaptchaPlaceholderBorder() {
         widget.render(gui, 100, 100, captcha);
 
-        int inputWidth = DIALOG_WIDTH - (DIALOG_PADDING + BORDER) * 2;
-        int contentX = 100 + DIALOG_PADDING + BORDER;
         int titleY = 100 + DIALOG_PADDING + BORDER;
         int subtitleY = titleY + TITLE_HEIGHT;
+        int placeholderX = 100 + (DIALOG_WIDTH - CAPTCHA_WIDTH) / 2;
         int placeholderY = subtitleY + ELEMENT_GAP + 4;
-        int inputY = placeholderY + CAPTCHA_HEIGHT + ELEMENT_GAP;
-        int buttonY = inputY + INPUT_HEIGHT + ELEMENT_GAP;
 
-        String idText = "ID: captcha_abc123";
-        int idTextWidth = font.width(idText);
-        int idX = 100 + DIALOG_WIDTH - DIALOG_PADDING - idTextWidth;
-        int idY = buttonY + BUTTON_HEIGHT + 4;
-
-        verify(gui).drawString(font, idText, idX, idY, 0xFF888888, false);
+        // Placeholder border and background
+        verify(gui).hLine(placeholderX, placeholderX + CAPTCHA_WIDTH - 1, placeholderY, BORDER_DARK);
+        verify(gui).fill(placeholderX + 2, placeholderY + 2, placeholderX + CAPTCHA_WIDTH - 2, placeholderY + CAPTCHA_HEIGHT - 2, PLACEHOLDER_INNER);
+        verify(gui).drawCenteredString(font, "CAPTCHA", placeholderX + CAPTCHA_WIDTH / 2, placeholderY + (CAPTCHA_HEIGHT - font.lineHeight) / 2, PLACEHOLDER_TEXT);
     }
 
     @Test
-    void render_rendersSubmitButton() {
-        widget.render(gui, 100, 100, captcha);
-
+    void getImageBounds_returnsCorrectCoordinates() {
         int titleY = 100 + DIALOG_PADDING + BORDER;
         int subtitleY = titleY + TITLE_HEIGHT;
+        int placeholderX = 100 + (DIALOG_WIDTH - CAPTCHA_WIDTH) / 2;
         int placeholderY = subtitleY + ELEMENT_GAP + 4;
-        int inputY = placeholderY + CAPTCHA_HEIGHT + ELEMENT_GAP;
-        int buttonX = 100 + (DIALOG_WIDTH - BUTTON_WIDTH) / 2;
-        int buttonY = inputY + INPUT_HEIGHT + ELEMENT_GAP;
 
-        // Button border
-        verify(gui).hLine(buttonX, buttonX + BUTTON_WIDTH - 1, buttonY, BORDER_WHITE);
-        verify(gui).vLine(buttonX, buttonY, buttonY + BUTTON_HEIGHT - 1, BORDER_WHITE);
-        verify(gui).hLine(buttonX, buttonX + BUTTON_WIDTH - 1, buttonY + BUTTON_HEIGHT - 1, BORDER_DARK);
-        verify(gui).vLine(buttonX + BUTTON_WIDTH - 1, buttonY, buttonY + BUTTON_HEIGHT - 1, BORDER_DARK);
-        // Button background
-        verify(gui).fill(buttonX + 1, buttonY + 1, buttonX + BUTTON_WIDTH - 1, buttonY + BUTTON_HEIGHT - 1, BUTTON_BG);
-        // Button text
-        verify(gui).drawCenteredString(font, "提交", buttonX + BUTTON_WIDTH / 2, buttonY + (BUTTON_HEIGHT - font.lineHeight) / 2, BUTTON_TEXT);
-    }
-
-    @Test
-    void render_rendersInputField() {
-        widget.render(gui, 100, 100, captcha);
-
-        int contentX = 100 + DIALOG_PADDING + BORDER;
-        int inputWidth = DIALOG_WIDTH - (DIALOG_PADDING + BORDER) * 2;
-        int titleY = 100 + DIALOG_PADDING + BORDER;
-        int subtitleY = titleY + TITLE_HEIGHT;
-        int placeholderY = subtitleY + ELEMENT_GAP + 4;
-        int inputY = placeholderY + CAPTCHA_HEIGHT + ELEMENT_GAP;
-
-        // Input field black background
-        verify(gui).fill(contentX, inputY, contentX + inputWidth, inputY + INPUT_HEIGHT, 0xFF000000);
-        // Input field inner border
-        verify(gui).hLine(contentX, contentX + inputWidth - 1, inputY, BORDER_DARK);
-        verify(gui).vLine(contentX, inputY, inputY + INPUT_HEIGHT - 1, BORDER_DARK);
-        verify(gui).hLine(contentX, contentX + inputWidth - 1, inputY + INPUT_HEIGHT - 1, BORDER_WHITE);
-        verify(gui).vLine(contentX + inputWidth - 1, inputY, inputY + INPUT_HEIGHT - 1, BORDER_WHITE);
+        int[] bounds = widget.getImageBounds(100, 100);
+        assertArrayEquals(new int[]{placeholderX, placeholderY, CAPTCHA_WIDTH, CAPTCHA_HEIGHT}, bounds);
     }
 
     @Test
