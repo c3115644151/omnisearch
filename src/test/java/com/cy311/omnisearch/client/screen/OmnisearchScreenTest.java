@@ -2,6 +2,7 @@ package com.cy311.omnisearch.client.screen;
 
 import com.cy311.omnisearch.data.model.ItemPage;
 import com.cy311.omnisearch.data.model.CaptchaContext;
+import com.cy311.omnisearch.data.model.PendingRequest;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
@@ -209,5 +210,76 @@ class OmnisearchScreenTest {
         assertEquals(SearchState.LoadingState.IDLE, s2.loading());
         assertEquals(1, s2.results().size());
         assertEquals("Naga Scale", s2.results().get(0).name());
+    }
+
+    // ── 13. PendingRequest 贯穿：验证码恢复上下文 ─────────────────────
+
+    @Test
+    void searchSubmitted_preservesPendingSearchRequest() {
+        var state = SearchState.initial()
+            .withQuery(new SearchQuery("娜迦"))
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")));
+        var result = SearchReducer.reduce(state, new SearchEvent.SearchSubmitted());
+        assertNotNull(result.pendingRequest());
+        assertInstanceOf(PendingRequest.Search.class, result.pendingRequest());
+        assertEquals(new SearchQuery("娜迦"), ((PendingRequest.Search) result.pendingRequest()).query());
+    }
+
+    @Test
+    void captchaSolved_preservesPendingSearchRequest() {
+        var state = SearchState.initial()
+            .withPage(SearchState.Page.RESULTS)
+            .withLoading(SearchState.LoadingState.CAPTCHA_REQUIRED)
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")))
+            .withCaptcha(new CaptchaContext("url", "id", "answerUrl"));
+        var result = SearchReducer.reduce(state, new SearchEvent.CaptchaSolved("42"));
+        assertNotNull(result.pendingRequest());
+        assertInstanceOf(PendingRequest.Search.class, result.pendingRequest());
+        assertEquals(new SearchQuery("娜迦"), ((PendingRequest.Search) result.pendingRequest()).query());
+    }
+
+    @Test
+    void captchaSolved_preservesPendingDetailRequest() {
+        var state = SearchState.initial()
+            .withPage(SearchState.Page.DETAIL)
+            .withLoading(SearchState.LoadingState.CAPTCHA_REQUIRED)
+            .withPendingRequest(new PendingRequest.Detail("item/123"))
+            .withCaptcha(new CaptchaContext("url", "id", "answerUrl"));
+        var result = SearchReducer.reduce(state, new SearchEvent.CaptchaSolved("42"));
+        assertNotNull(result.pendingRequest());
+        assertInstanceOf(PendingRequest.Detail.class, result.pendingRequest());
+        assertEquals("item/123", ((PendingRequest.Detail) result.pendingRequest()).pageId());
+    }
+
+    @Test
+    void searchResultsLoaded_clearsPendingRequest() {
+        var state = SearchState.initial()
+            .withLoading(SearchState.LoadingState.LOADING)
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")));
+        var result = SearchReducer.reduce(state, new SearchEvent.SearchResultsLoaded(
+            List.of(new SearchHit("item/1", "a", "item", "mod"))
+        ));
+        assertNull(result.pendingRequest());
+    }
+
+    @Test
+    void detailLoaded_clearsPendingRequest() {
+        var doc = new Document("Title", null, null, List.of(new TextNode("content")));
+        var page = new ItemPage("item/123", "Title", "Mod", doc, "url");
+        var state = SearchState.initial()
+            .withPage(SearchState.Page.DETAIL)
+            .withLoading(SearchState.LoadingState.LOADING)
+            .withPendingRequest(new PendingRequest.Detail("item/123"));
+        var result = SearchReducer.reduce(state, new SearchEvent.DetailLoaded(page));
+        assertNull(result.pendingRequest());
+    }
+
+    @Test
+    void errorOccurred_clearsPendingRequest() {
+        var state = SearchState.initial()
+            .withLoading(SearchState.LoadingState.LOADING)
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")));
+        var result = SearchReducer.reduce(state, new SearchEvent.ErrorOccurred("timeout"));
+        assertNull(result.pendingRequest());
     }
 }

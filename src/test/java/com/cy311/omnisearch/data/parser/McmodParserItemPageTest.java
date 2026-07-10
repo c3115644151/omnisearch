@@ -26,7 +26,7 @@ class McmodParserItemPageTest {
         var doc = parser.parseItemPage(html, "https://www.mcmod.cn/item/123.html");
 
         assertEquals("娜迦鳞片", doc.title());
-        assertEquals("暮色森林", doc.sourceMod());
+        assertEquals("暮色森林|https://www.mcmod.cn/class/1.html", doc.sourceMod());
         assertEquals("https://www.mcmod.cn/item/123.html", doc.sourceUrl());
     }
 
@@ -47,8 +47,8 @@ class McmodParserItemPageTest {
 
         var doc = parser.parseItemPage(html, "https://www.mcmod.cn/item/456.html");
 
-        // Should get the last mod link
-        assertEquals("暮色森林", doc.sourceMod());
+        // Should get the last mod link with absolute URL
+        assertEquals("暮色森林|https://www.mcmod.cn/class/2.html", doc.sourceMod());
     }
 
     @Test

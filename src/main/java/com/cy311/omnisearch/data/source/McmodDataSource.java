@@ -10,6 +10,8 @@ import com.cy311.omnisearch.data.parser.McmodParser;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 
 /**
  * Data source implementation for mcmod.cn.
@@ -20,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
  * <p>
  * Uses constructor injection for testability.
  */
-public class McmodDataSource implements DataSource {
+public class McmodDataSource implements CaptchaCapableDataSource {
 
     private static final String BASE_URL = "https://www.mcmod.cn";
 
@@ -33,6 +35,13 @@ public class McmodDataSource implements DataSource {
      */
     public McmodDataSource() {
         this(new McmodHttpClient(), new McmodParser(), new McmodCaptchaHandler());
+    }
+
+    /**
+     * Creates a McmodDataSource with a custom HTTP client (for sharing with ImageManager).
+     */
+    public McmodDataSource(McmodHttpClient client) {
+        this(client, new McmodParser(), new McmodCaptchaHandler());
     }
 
     /**
@@ -84,10 +93,18 @@ public class McmodDataSource implements DataSource {
             if (html.isBlank()) return null;
             checkCaptcha(html, url);
             Document doc;
-            if (pageId.startsWith("item/")) {
-                doc = parser.parseItemPage(html, url);
-            } else {
-                doc = parser.parseModPage(html, url);
+            try {
+                if (pageId.startsWith("item/")) {
+                    doc = parser.parseItemPage(html, url);
+                } else {
+                    doc = parser.parseModPage(html, url);
+                }
+            } catch (Exception e) {
+                String errMsg = "[McmodDataSource] parseItemPage EXCEPTION: " + e.getMessage();
+                try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
+                    pw.println(System.currentTimeMillis() + " " + errMsg);
+                } catch (Exception ignored) {}
+                throw e;
             }
             return new ItemPage(pageId, doc.title(), doc.sourceMod(), doc, url);
         });

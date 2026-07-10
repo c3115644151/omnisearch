@@ -2,6 +2,7 @@ package com.cy311.omnisearch.search;
 
 import com.cy311.omnisearch.data.model.CaptchaContext;
 import com.cy311.omnisearch.data.model.ItemPage;
+import com.cy311.omnisearch.data.model.PendingRequest;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
@@ -25,6 +26,7 @@ class SearchStateTest {
         assertEquals(SearchState.LoadingState.IDLE, state.loading());
         assertNull(state.errorMessage());
         assertNull(state.captcha());
+        assertNull(state.pendingRequest());
     }
 
     @Test
@@ -100,6 +102,24 @@ class SearchStateTest {
         assertNotSame(state, modified);
         assertEquals(SearchState.LoadingState.IDLE, state.loading());
         assertEquals(SearchState.LoadingState.LOADING, modified.loading());
+    }
+
+    @Test
+    void withPendingRequest_returnsNewInstance() {
+        var state = SearchState.initial();
+        var pending = new PendingRequest.Search(new SearchQuery("娜迦"));
+        var modified = state.withPendingRequest(pending);
+        assertNotSame(state, modified);
+        assertNull(state.pendingRequest());
+        assertEquals(pending, modified.pendingRequest());
+    }
+
+    @Test
+    void withPendingRequest_canSetNull() {
+        var original = SearchState.initial()
+            .withPendingRequest(new PendingRequest.Detail("item/123"));
+        var modified = original.withPendingRequest(null);
+        assertNull(modified.pendingRequest());
     }
 
     @Test

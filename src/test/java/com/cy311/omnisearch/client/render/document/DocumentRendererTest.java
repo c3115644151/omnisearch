@@ -17,7 +17,7 @@ import static org.mockito.Mockito.*;
  *
  * <p>Uses mock Font where {@code font.lineHeight} is 0 (because lineHeight is a final field
  * and Mockito cannot stub fields). This means all drawString calls land at the same Y
- * within a block-level node. Y advancement is still observable via paragraph spacing (4px)
+ * within a block-level node. Y advancement is still observable via paragraph spacing (8px)
  * and the returned Y offsets.
  */
 class DocumentRendererTest {
@@ -28,24 +28,17 @@ class DocumentRendererTest {
 
     // ---- helpers ----
 
-    private static DocumentRenderer createRenderer(GuiGraphics gui, Font font) {
-        return new DocumentRenderer(gui, font, X, Y, WIDTH);
+    private static DocumentRenderer createRenderer(Font font) {
+        return new DocumentRenderer(font, null);
     }
 
-    /**
-     * Creates a Font mock with plainSubstrByWidth stubbed to match the
-     * width(text)=text.length()*6 convention.
-     */
-    private static Font createFontWithWrapStub() {
-        Font font = RenderTestUtil.createMockFont();
-        lenient().when(font.plainSubstrByWidth(anyString(), anyInt())).thenAnswer(invocation -> {
-            String text = invocation.getArgument(0);
-            int maxWidth = invocation.getArgument(1);
-            int maxChars = Math.max(0, maxWidth / RenderTestUtil.PX_PER_CHAR);
-            if (maxChars >= text.length()) return text;
-            return text.substring(0, maxChars);
-        });
-        return font;
+    private static void renderDocument(DocumentRenderer renderer, GuiGraphics gui, Document doc) {
+        renderDocument(renderer, gui, doc, X, Y);
+    }
+
+    private static void renderDocument(DocumentRenderer renderer, GuiGraphics gui, Document doc, int offsetX, int offsetY) {
+        var layout = renderer.prepare(doc, WIDTH);
+        renderer.paint(gui, layout, offsetX, offsetY);
     }
 
     // ===========================================================
@@ -56,11 +49,11 @@ class DocumentRendererTest {
     void textNode_rendersPlainText() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var doc = new Document("test", null, null,
             List.of(new TextNode("Hello World")));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -72,11 +65,11 @@ class DocumentRendererTest {
     void textNode_rendersAtCorrectPosition() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = new DocumentRenderer(gui, font, 10, 20, WIDTH);
+        var renderer = createRenderer(font);
         var doc = new Document("test", null, null,
             List.of(new TextNode("Hello")));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc, 10, 20);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -87,20 +80,29 @@ class DocumentRendererTest {
     @Test
     void textNode_wrapsWhenExceedingWidth() {
         var gui = RenderTestUtil.createMockGuiGraphics();
-        var font = createFontWithWrapStub();
-        // Width=200, PX_PER_CHAR=6 => ~33 chars per line.
-        // 42 chars "AAA BBB CCC DDD EEE FFF GGG HHH III JJJ" (width=252 > 200) triggers wrapping.
-        var renderer = new DocumentRenderer(gui, font, X, Y, WIDTH);
-        String longText = "AAA BBB CCC DDD EEE FFF GGG HHH III JJJ";
-        var doc = new Document("test", null, null,
-            List.of(new TextNode(longText)));
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        // With PX_PER_CHAR=6 and width=200, each "x " is 12px wide.
+        // 16 items fit per line (200/12 = 16). Item 17 wraps to line 2.
+        var words = new java.util.ArrayList<DocNode>();
+        for (int i = 0; i < 30; i++) {
+            words.add(new TextNode("x "));
+        }
+        var para = new ParagraphNode(words);
+        var doc = new Document("test", null, null, List.of(para));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
-        // Verify wrapping occurred: more than one draw call means text was split
         var calls = RenderTestUtil.getDrawCalls(gui);
-        assertTrue(calls.size() >= 2,
-            "should wrap long text into at least 2 lines, got: " + calls.size());
+        // First item starts at x=0
+        assertEquals(0, calls.get(0).x());
+        int firstLineY = calls.get(0).y();
+        var wrappedCall = calls.stream()
+            .filter(c -> c.y() > firstLineY)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("expected wrapped content on a later line"));
+        assertEquals(0, wrappedCall.x(),
+            "wrapped line should restart from the left edge");
     }
 
     // ===========================================================
@@ -111,13 +113,12 @@ class DocumentRendererTest {
     void styledTextNode_boldRendersDouble() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new StyledTextNode("Bold", TextStyle.BOLD);
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
-        // Bold renders twice: at (x, y) and (x+1, y)
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(2, calls.size(),
             "bold text should produce 2 drawString calls");
@@ -130,12 +131,12 @@ class DocumentRendererTest {
     void styledTextNode_colorText() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var style = new TextStyle(false, false, false, false, "#FF6600");
         var node = new StyledTextNode("Orange", style);
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -146,11 +147,11 @@ class DocumentRendererTest {
     void styledTextNode_normalTextNoBold() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new StyledTextNode("Normal", TextStyle.NORMAL);
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size(),
@@ -166,11 +167,11 @@ class DocumentRendererTest {
     void headingNode_level1_goldColor() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new HeadingNode(1, List.of(new TextNode("Title")));
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -182,11 +183,11 @@ class DocumentRendererTest {
     void headingNode_level2_lightGoldColor() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new HeadingNode(2, List.of(new TextNode("Subtitle")));
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -198,11 +199,11 @@ class DocumentRendererTest {
     void headingNode_level3_whiteColor() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new HeadingNode(3, List.of(new TextNode("Small Heading")));
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -214,31 +215,15 @@ class DocumentRendererTest {
     void headingNode_levelHigherThan3_whiteColor() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var node = new HeadingNode(5, List.of(new TextNode("Deep Heading")));
         var doc = new Document("test", null, null, List.of(node));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
         assertEquals(0xFFFFFFFF, calls.get(0).color());
-    }
-
-    @Test
-    void headingNode_usesPoseTransform() {
-        var gui = RenderTestUtil.createMockGuiGraphics();
-        var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
-        var node = new HeadingNode(1, List.of(new TextNode("Scaled")));
-        var doc = new Document("test", null, null, List.of(node));
-
-        renderer.render(doc);
-
-        verify(gui.pose()).pushPose();
-        verify(gui.pose()).popPose();
-        verify(gui.pose()).translate(eq((float) X), eq((float) Y), eq(0.0f));
-        verify(gui.pose()).scale(eq(1.5f), eq(1.5f), eq(1.0f));
     }
 
     // ===========================================================
@@ -249,7 +234,7 @@ class DocumentRendererTest {
     void paragraphNode_rendersInlineChildren() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var para = new ParagraphNode(List.of(
             new TextNode("Hello"),
             new TextNode(" "),
@@ -257,7 +242,7 @@ class DocumentRendererTest {
         ));
         var doc = new Document("test", null, null, List.of(para));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(3, calls.size());
@@ -270,20 +255,69 @@ class DocumentRendererTest {
     void paragraphNode_addsSpacingAfter() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var p1 = new ParagraphNode(List.of(new TextNode("First")));
         var p2 = new ParagraphNode(List.of(new TextNode("Second")));
         var doc = new Document("test", null, null, List.of(p1, p2));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(2, calls.size());
-        // First paragraph: y += 2, so renders at y=2
-        assertEquals(2, calls.get(0).y());
+        // First paragraph renders at y=0 (no inner offset)
+        assertEquals(0, calls.get(0).y());
         // Second paragraph should be at a different Y due to spacing
         assertNotEquals(calls.get(0).y(), calls.get(1).y(),
             "paragraphs should be at different Y positions");
+    }
+
+    @Test
+    void paragraphNode_inlineIconConsumesInlineSpace() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        var para = new ParagraphNode(List.of(
+            new TextNode("A"),
+            new ImageInlineNode("mc-icon://icon-health-full", "health"),
+            new TextNode("B")
+        ));
+        var doc = new Document("test", null, null, List.of(para));
+
+        renderDocument(renderer, gui, doc);
+
+        var calls = RenderTestUtil.getDrawCalls(gui);
+        var sprites = RenderTestUtil.getSpriteCalls(gui);
+        assertEquals(2, calls.size());
+        assertEquals(1, sprites.size());
+        assertEquals("A", calls.get(0).text());
+        assertEquals("B", calls.get(1).text());
+        assertEquals(0, calls.get(0).x());
+        assertTrue(sprites.get(0).width() > 0);
+        assertEquals(calls.get(0).x() + RenderTestUtil.PX_PER_CHAR, sprites.get(0).x());
+        assertEquals(
+            sprites.get(0).x() + sprites.get(0).width() + 1,
+            calls.get(1).x(),
+            "icon should advance inline flow before the next text fragment"
+        );
+    }
+
+    @Test
+    void paragraphNode_linkWrappedAcrossLinesExtractsMultipleHits() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        var longLinkText = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMN";
+        var link = new LinkNode("https://example.com/test", List.of(new TextNode(longLinkText)));
+        var doc = new Document("test", null, null, List.of(new ParagraphNode(List.of(link))));
+
+        var layout = renderer.prepare(doc, 60);
+        renderer.paint(gui, layout, X, Y);
+
+        var hits = layout.extractLinks();
+        assertTrue(hits.size() >= 2, "wrapped link should produce one hit per rendered fragment");
+        assertTrue(hits.stream().map(DocumentRenderer.LinkHit::y).distinct().count() >= 2);
+        var calls = RenderTestUtil.getDrawCalls(gui);
+        assertTrue(calls.stream().allMatch(c -> c.color() == 0xFF5555FF));
     }
 
     // ===========================================================
@@ -294,12 +328,12 @@ class DocumentRendererTest {
     void linkNode_rendersInBlue() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var link = new LinkNode("https://example.com",
             List.of(new TextNode("Click Me")));
         var doc = new Document("test", null, null, List.of(link));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
@@ -311,27 +345,27 @@ class DocumentRendererTest {
     void linkNode_underlinesText() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
-        // "Hi" has width=12, so x1=0, x2=11
+        var renderer = createRenderer(font);
+        // "Hi" has textWidth=2*6=12, so x1=0, x2=11
         var link = new LinkNode("https://example.com",
             List.of(new TextNode("Hi")));
         var doc = new Document("test", null, null, List.of(link));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
-        verify(gui).hLine(eq(0), eq(11), anyInt(), eq(0xFF5555FF));
+        verify(gui).hLine(eq(0), eq(RenderTestUtil.PX_PER_CHAR * 2 - 1), anyInt(), eq(0xFF5555FF));
     }
 
     @Test
     void linkNode_recursiveChildren() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var link = new LinkNode("https://example.com",
             List.of(new StyledTextNode("Bold Link", TextStyle.BOLD)));
         var doc = new Document("test", null, null, List.of(link));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.size() >= 1);
@@ -347,16 +381,15 @@ class DocumentRendererTest {
     void tableNode_rendersHeader() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var rows = List.<List<DocNode>>of(
             List.of(new TextNode("Alice"), new TextNode("100"))
         );
         var table = new TableNode(List.of("Name", "Value"), rows);
         var doc = new Document("test", null, null, List.of(table));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
-        // Headers rendered twice each (shadow effect)
         var calls = RenderTestUtil.getDrawCalls(gui);
         long headerCalls = calls.stream()
             .filter(c -> c.text().equals("Name") || c.text().equals("Value"))
@@ -364,8 +397,8 @@ class DocumentRendererTest {
         assertEquals(4, headerCalls,
             "each header drawn twice (shadow)");
 
-        // Header background fill
-        verify(gui).fill(anyInt(), anyInt(), anyInt(), anyInt(),
+        // Header background fill (2 header cells)
+        verify(gui, times(2)).fill(anyInt(), anyInt(), anyInt(), anyInt(),
             eq(0xFF333333));
     }
 
@@ -373,32 +406,32 @@ class DocumentRendererTest {
     void tableNode_rendersDataRows() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var rows = List.<List<DocNode>>of(
             List.of(new TextNode("Alice"), new TextNode("100"))
         );
         var table = new TableNode(List.of("Name", "Value"), rows);
         var doc = new Document("test", null, null, List.of(table));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         long dataCalls = calls.stream()
             .filter(c -> c.text().equals("Alice") || c.text().equals("100"))
             .count();
         assertEquals(2, dataCalls,
-            "data cells should be drawn once each");
+            "data cells drawn once in renderTableNode");
     }
 
     @Test
     void tableNode_emptyHeaders_skipsRendering() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var table = new TableNode(List.of(), List.of());
         var doc = new Document("test", null, null, List.of(table));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.isEmpty());
@@ -412,72 +445,72 @@ class DocumentRendererTest {
     void listNode_ordered_rendersNumbers() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var list = new ListNode(true, List.of(
             new ParagraphNode(List.of(new TextNode("First item"))),
             new ParagraphNode(List.of(new TextNode("Second item")))
         ));
         var doc = new Document("test", null, null, List.of(list));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         long markerCalls = calls.stream()
-            .filter(c -> c.text().equals("1.") || c.text().equals("2."))
+            .filter(c -> c.text().equals("1. ") || c.text().equals("2. "))
             .count();
         assertEquals(2, markerCalls,
-            "ordered list should render numeric markers");
+            "ordered list markers rendered once (renderListNode)");
 
         long contentCalls = calls.stream()
             .filter(c -> c.text().equals("First item")
                 || c.text().equals("Second item"))
             .count();
         assertEquals(2, contentCalls,
-            "ordered list should render item content");
+            "ordered list content rendered once (renderListNode)");
     }
 
     @Test
     void listNode_unordered_rendersBullets() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var list = new ListNode(false, List.of(
             new ParagraphNode(List.of(new TextNode("Bullet A"))),
             new ParagraphNode(List.of(new TextNode("Bullet B")))
         ));
         var doc = new Document("test", null, null, List.of(list));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         long bulletCalls = calls.stream()
-            .filter(c -> c.text().equals("\u2022"))
+            .filter(c -> c.text().equals("\u2022 "))
             .count();
         assertEquals(2, bulletCalls,
-            "unordered list should render bullet markers");
+            "unordered list bullets rendered once (renderListNode)");
     }
 
     @Test
     void listNode_contentIndented() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var list = new ListNode(true, List.of(
             new ParagraphNode(List.of(new TextNode("Item")))
         ));
         var doc = new Document("test", null, null, List.of(list));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         var marker = calls.stream()
-            .filter(c -> c.text().equals("1."))
+            .filter(c -> c.text().equals("1. "))
             .findFirst().orElseThrow();
         assertEquals(X, marker.x());
         var content = calls.stream()
             .filter(c -> c.text().equals("Item"))
             .findFirst().orElseThrow();
-        assertEquals(X + 10, content.x());
+        assertEquals(X + 15, content.x());
     }
 
     // ===========================================================
@@ -488,17 +521,15 @@ class DocumentRendererTest {
     void dividerNode_rendersHorizontalLine() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var doc = new Document("test", null, null,
             List.of(new DividerNode()));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
-        // margin = min(10, width/8) = min(10, 25) = 10
-        // dividerX = 0 + 10 = 10
-        // dividerWidth = 200 - 20 = 180
-        // hLine(10, 10 + 180 = 190, midY, 0xFF888888)
-        verify(gui).hLine(eq(10), eq(190), anyInt(), eq(0xFF888888));
+        // LayoutEngine places divider at (contentX=0, currentY=0) with width=200
+        // hLine(0, 0+200=200, midY, 0xFF888888)
+        verify(gui).hLine(eq(0), eq(200), anyInt(), eq(0xFF888888));
     }
 
     // ===========================================================
@@ -509,12 +540,12 @@ class DocumentRendererTest {
     void sectionNode_rendersTitleAndChildren() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var section = new SectionNode("Overview",
             List.of(new TextNode("Some content")));
         var doc = new Document("test", null, null, List.of(section));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(2, calls.size());
@@ -527,12 +558,12 @@ class DocumentRendererTest {
     void sectionNode_indentsChildren() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var section = new SectionNode("Sec",
             List.of(new TextNode("Child")));
         var doc = new Document("test", null, null, List.of(section));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals("Sec", calls.get(0).text());
@@ -549,12 +580,12 @@ class DocumentRendererTest {
     void imageNode_rendersPlaceholder() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var img = new ImageNode(
             "https://example.com/img.png", "alt text", null);
         var doc = new Document("test", null, null, List.of(img));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals("alt text", calls.get(0).text());
@@ -567,11 +598,11 @@ class DocumentRendererTest {
     void imageNode_placeholderDimensions() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = new DocumentRenderer(gui, font, 10, 20, WIDTH);
+        var renderer = createRenderer(font);
         var img = new ImageNode("url", "img", null);
         var doc = new Document("test", null, null, List.of(img));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc, 10, 20);
 
         // fill(10, 20, 10+64=74, 20+48=68, 0xFF444444)
         verify(gui).fill(eq(10), eq(20), eq(74), eq(68),
@@ -582,11 +613,11 @@ class DocumentRendererTest {
     void imageNode_emptyAlt_skipsText() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var img = new ImageNode("url", "", null);
         var doc = new Document("test", null, null, List.of(img));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.isEmpty(),
@@ -601,7 +632,7 @@ class DocumentRendererTest {
     void document_renderAllNodeTypes() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
 
         var doc = new Document("Full Doc", "TestMod", null, List.of(
             new HeadingNode(1,
@@ -635,7 +666,7 @@ class DocumentRendererTest {
             )
         ));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
 
@@ -646,7 +677,7 @@ class DocumentRendererTest {
             calls.stream().anyMatch(c -> c.text().equals("bold")),
             "bold styled text");
         assertTrue(
-            calls.stream().anyMatch(c -> c.text().equals("1.")),
+            calls.stream().anyMatch(c -> c.text().equals("1. ")),
             "list marker");
         assertTrue(
             calls.stream().anyMatch(c -> c.text().equals("Read more")),
@@ -677,10 +708,10 @@ class DocumentRendererTest {
     void document_emptyContent_noRenderCalls() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var doc = new Document("empty", null, null, List.of());
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.isEmpty());
@@ -690,11 +721,11 @@ class DocumentRendererTest {
     void textNode_emptyString_returnsYAdvance() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(gui, font);
+        var renderer = createRenderer(font);
         var doc = new Document("test", null, null,
             List.of(new TextNode("")));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.isEmpty(),
@@ -705,17 +736,16 @@ class DocumentRendererTest {
     void multipleNodes_cascadeYCorrectly() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = new DocumentRenderer(gui, font, X, 100, WIDTH);
+        var renderer = createRenderer(font);
         var doc = new Document("test", null, null, List.of(
             new TextNode("Line1"),
             new TextNode("Line2")
         ));
 
-        renderer.render(doc);
+        renderDocument(renderer, gui, doc, X, 100);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.size() >= 2, "should have at least 2 draw calls");
-        // Each TextNode advances Y by font.lineHeight (9)
         assertEquals(100, calls.get(0).y());
     }
 }

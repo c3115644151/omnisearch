@@ -11,6 +11,7 @@ public class SearchReducer {
                 .withLoading(SearchState.LoadingState.LOADING);
             case SearchEvent.SearchResultsLoaded r -> current
                 .withResults(r.results())
+                .withPendingRequest(null)
                 .withLoading(SearchState.LoadingState.IDLE);
             case SearchEvent.ResultSelected r -> {
                 if (r.index() < 0 || r.index() >= current.results().size()) {
@@ -25,6 +26,7 @@ public class SearchReducer {
             }
             case SearchEvent.DetailLoaded d -> current
                 .withDetailPage(d.page())
+                .withPendingRequest(null)
                 .withLoading(SearchState.LoadingState.IDLE);
             case SearchEvent.LinkClicked l -> current
                 .withNavStack(current.navStack().push(current))
@@ -42,6 +44,7 @@ public class SearchReducer {
                 .withCaptcha(null)
                 .withLoading(SearchState.LoadingState.LOADING);
             case SearchEvent.ErrorOccurred e -> current
+                .withPendingRequest(null)
                 .withLoading(SearchState.LoadingState.ERROR)
                 .withErrorMessage(e.message());
             case SearchEvent.Dismiss d -> SearchState.initial();

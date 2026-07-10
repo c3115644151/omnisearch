@@ -2,6 +2,7 @@ package com.cy311.omnisearch.search;
 
 import com.cy311.omnisearch.data.model.CaptchaContext;
 import com.cy311.omnisearch.data.model.ItemPage;
+import com.cy311.omnisearch.data.model.PendingRequest;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
@@ -53,6 +54,18 @@ class SearchReducerTest {
         var event = new SearchEvent.SearchSubmitted();
         var result = SearchReducer.reduce(state, event);
         assertEquals(new SearchQuery("娜迦"), result.query());
+    }
+
+    @Test
+    void searchResultsLoaded_clearsPendingRequest() {
+        var state = SearchState.initial()
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("test")))
+            .withLoading(SearchState.LoadingState.LOADING);
+        var result = SearchReducer.reduce(
+            state,
+            new SearchEvent.SearchResultsLoaded(List.of(new SearchHit("item/1", "a", "item", "mod1")))
+        );
+        assertNull(result.pendingRequest());
     }
 
     @Test
@@ -149,6 +162,17 @@ class SearchReducerTest {
         var result = SearchReducer.reduce(state, event);
         assertEquals(page, result.detailPage());
         assertEquals(SearchState.LoadingState.IDLE, result.loading());
+    }
+
+    @Test
+    void detailLoaded_clearsPendingRequest() {
+        var doc = new Document("Title", null, null, List.of());
+        var page = new ItemPage("id", "title", "mod", doc, "url");
+        var state = SearchState.initial()
+            .withPendingRequest(new PendingRequest.Detail("item/123"))
+            .withLoading(SearchState.LoadingState.LOADING);
+        var result = SearchReducer.reduce(state, new SearchEvent.DetailLoaded(page));
+        assertNull(result.pendingRequest());
     }
 
     @Test
@@ -252,12 +276,14 @@ class SearchReducerTest {
             .withPage(SearchState.Page.RESULTS)
             .withQuery(new SearchQuery("test"))
             .withResults(List.of(new SearchHit("id", "name", "type", "mod")))
+            .withPendingRequest(new PendingRequest.Search(new SearchQuery("test")))
             .withCaptcha(new CaptchaContext("url", "id", "answerUrl"));
         var event = new SearchEvent.CaptchaSolved("solution");
         var result = SearchReducer.reduce(state, event);
         assertEquals(SearchState.Page.RESULTS, result.currentPage());
         assertEquals(new SearchQuery("test"), result.query());
         assertEquals(1, result.results().size());
+        assertEquals(new PendingRequest.Search(new SearchQuery("test")), result.pendingRequest());
     }
 
     @Test
@@ -297,6 +323,15 @@ class SearchReducerTest {
         var event = new SearchEvent.ErrorOccurred("");
         var result = SearchReducer.reduce(state, event);
         assertEquals("", result.errorMessage());
+    }
+
+    @Test
+    void errorOccurred_clearsPendingRequest() {
+        var state = SearchState.initial()
+            .withPendingRequest(new PendingRequest.Detail("item/123"))
+            .withLoading(SearchState.LoadingState.LOADING);
+        var result = SearchReducer.reduce(state, new SearchEvent.ErrorOccurred("boom"));
+        assertNull(result.pendingRequest());
     }
 
     @Test

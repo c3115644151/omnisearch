@@ -119,7 +119,7 @@ class McmodParserModPageTest {
             </body></html>
             """;
         var doc = parser.parseModPage(html, "https://www.mcmod.cn/class/456.html");
-        assertEquals("暮色森林", doc.sourceMod());
+        assertEquals("暮色森林|https://www.mcmod.cn/class/456.html", doc.sourceMod());
     }
 
     @Test

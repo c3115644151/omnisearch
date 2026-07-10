@@ -1,5 +1,6 @@
 package com.cy311.omnisearch.data.parser;
 
+import com.cy311.omnisearch.OmnisearchMod;
 import com.cy311.omnisearch.data.model.*;
 import com.cy311.omnisearch.data.model.document.*;
 import org.jsoup.Jsoup;
@@ -12,6 +13,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 
 /**
  * Parses mcmod.cn HTML pages into structured data.model objects.
@@ -99,7 +102,18 @@ public class McmodParser {
             return new Document("", null, url, List.of());
         }
 
-        org.jsoup.nodes.Document doc = Jsoup.parse(html);
+        // Extract numeric item ID from URL
+        String itemId = "";
+        java.util.regex.Matcher idMatcher = java.util.regex.Pattern.compile("/item/(\\d+)").matcher(url);
+        if (idMatcher.find()) itemId = idMatcher.group(1);
+
+        String debugMsg = "[McmodParser] parseItemPage called url=" + url + " htmlLen=" + html.length()
+            + " hasCaptcha=" + html.contains("安全验证");
+        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
+            pw.println(System.currentTimeMillis() + " " + debugMsg);
+        } catch (Exception ignored) {}
+
+        org.jsoup.nodes.Document doc = Jsoup.parse(html, url);
 
         // Title
         String title = "";
@@ -108,22 +122,64 @@ public class McmodParser {
             title = titleEl.text().trim();
         }
 
-        // Source mod
+        // Source mod + URL (store as "name|url" for DetailPanelWidget)
         String sourceMod = null;
         Elements modLinks = doc.select(".common-nav a.item[href*='/class/']");
         if (!modLinks.isEmpty()) {
-            sourceMod = modLinks.last().text().trim();
+            Element lastMod = modLinks.last();
+            String name = lastMod.text().trim();
+            String modUrl = resolveModUrl(lastMod, url);
+            OmnisearchMod.LOGGER.info("[McmodParser] Item page modLinks count={} lastText='{}' lastHref='{}' absUrl='{}' resolved='{}'",
+                modLinks.size(), name, lastMod.attr("href"), lastMod.absUrl("href"), modUrl);
+            sourceMod = modUrl != null && !modUrl.isBlank()
+                ? name + "|" + modUrl
+                : name;
+        } else {
+            OmnisearchMod.LOGGER.info("[McmodParser] Item page NO modLinks found. url={} urlLen={}", url, url.length());
         }
 
         // Content
         Element contentEl = doc.selectFirst(".item-content.common-text.font14");
         List<DocNode> content = new ArrayList<>();
 
-        if (titleEl != null && !title.isBlank()) {
-            TextNode titleText = new TextNode(title);
-            content.add(new HeadingNode(1, java.util.List.of(titleText)));
+        // ── Step 1: Extract item icon ──
+        String iconUrl = null;
+        String iconAlt = "";
+        Elements iconImgCandidates = doc.select(
+            ".item-icon img, .itemicon img, .item-img img, .itempic img, " +
+            "div.itemname img, .main-icon img, .icont img, " +
+            "a[href*='/item/" + itemId + "'] img"
+        );
+        for (Element img : iconImgCandidates) {
+            String src = img.absUrl("src");
+            if (src.isEmpty()) src = img.attr("src");
+            if (src.startsWith("//")) src = "https:" + src;
+            if (!src.isEmpty() && !src.contains("avatar") && !src.contains("data:")) {
+                iconUrl = src;
+                iconAlt = img.attr("alt");
+                break;
+            }
+        }
+        if (iconUrl == null) {
+            Elements allImgs = doc.select("img");
+            for (Element img : allImgs) {
+                String src = img.absUrl("src");
+                if (src.isEmpty()) src = img.attr("src");
+                if (src.contains("/item/icon/") || src.contains("/item_icon/")) {
+                    if (src.startsWith("//")) src = "https:" + src;
+                    iconUrl = src;
+                    iconAlt = img.attr("alt");
+                    break;
+                }
+            }
         }
 
+        // ── Step 2: Add item icon ──
+        if (iconUrl != null) {
+            content.add(new ImageNode(iconUrl, iconAlt, null));
+        }
+
+        // ── Step 3: Parse text content ──
         if (contentEl != null) {
             // Remove unwanted elements
             contentEl.select(".common-text-menu").remove();
@@ -134,6 +190,17 @@ public class McmodParser {
                 content.addAll(parsed);
             }
         }
+
+        // Debug log
+        int imgCount = (int) content.stream().filter(n -> n instanceof com.cy311.omnisearch.data.model.document.ImageNode).count();
+        int inlineImgCount = (int) content.stream().filter(n -> n instanceof com.cy311.omnisearch.data.model.document.ImageInlineNode).count();
+        String imgDebugMsg = "[McmodParser] item page: " + content.size() + " nodes, "
+            + imgCount + " ImageNode, "
+            + inlineImgCount + " ImageInlineNode src=" + url
+            + " icon=" + (iconUrl != null ? iconUrl.substring(Math.max(0, iconUrl.length()-40)) : "none");
+        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
+            pw.println(System.currentTimeMillis() + " " + imgDebugMsg);
+        } catch (Exception ignored) {}
 
         if (content.isEmpty()) {
             content.add(new TextNode("(empty content)"));
@@ -158,7 +225,7 @@ public class McmodParser {
             return new Document("", null, url, List.of());
         }
 
-        org.jsoup.nodes.Document doc = Jsoup.parse(html);
+        org.jsoup.nodes.Document doc = Jsoup.parse(html, url);
 
         // Title — try multiple possible selectors
         String title = "";
@@ -171,7 +238,12 @@ public class McmodParser {
         String sourceMod = null;
         Elements modLinks = doc.select(".common-nav a.item[href*='/class/']");
         if (!modLinks.isEmpty()) {
-            sourceMod = modLinks.last().text().trim();
+            Element lastMod = modLinks.last();
+            String name = lastMod.text().trim();
+            String modUrl = resolveModUrl(lastMod, url);
+            sourceMod = modUrl != null && !modUrl.isBlank()
+                ? name + "|" + modUrl
+                : name;
         }
 
         // Content
@@ -244,7 +316,19 @@ public class McmodParser {
             case "img" -> {
                 String src = el.absUrl("src");
                 if (src.isEmpty()) src = el.attr("src");
+                // data-src fallback for lazy-loaded images
+                if (src.isEmpty() || src.endsWith(".svg") || src.contains("placeholder")) {
+                    String dataSrc = el.attr("data-src");
+                    if (!dataSrc.isEmpty()) src = el.absUrl("data-src");
+                    if (src.isEmpty()) src = dataSrc;
+                }
                 String alt = el.attr("alt");
+                if (src.isBlank()) yield Collections.emptyList();
+                // Check for CSS background-image as fallback
+                String bgSrc = extractBackgroundImage(el);
+                if (bgSrc != null) {
+                    yield java.util.List.of(new ImageInlineNode(bgSrc, alt));
+                }
                 yield java.util.List.of(new ImageNode(src, alt, null));
             }
             case "div" -> {
@@ -252,11 +336,26 @@ public class McmodParser {
                 yield sectionResult;
             }
             case "br" -> Collections.emptyList();
+            case "svg" -> parseInlineSvg(el);
+            case "use" -> {
+                String href = el.attr("xlink:href");
+                if (href.isEmpty()) href = el.attr("href");
+                if (!href.startsWith("#")) yield Collections.emptyList();
+                String iconName = href.substring(1);
+                yield java.util.List.of(new ImageInlineNode("mc-icon://" + iconName, iconName));
+            }
             default -> {
-                String text = el.text().trim();
-                if (text.isBlank()) {
-                    yield Collections.emptyList();
+                // Check for CSS background-image (e.g. icon sprites, mc icons)
+                String bgSrc = extractBackgroundImage(el);
+                if (bgSrc != null) {
+                    String alt = el.attr("alt");
+                    if (alt.isBlank()) alt = el.text();
+                    yield java.util.List.of(new ImageInlineNode(bgSrc, alt));
                 }
+                // Fallback: render element text (NOT children — block elements
+                // are handled by parseBlockNode)
+                String text = el.text().trim();
+                if (text.isBlank()) yield Collections.emptyList();
                 yield java.util.List.of(new TextNode(text));
             }
         };
@@ -333,11 +432,25 @@ public class McmodParser {
             case "img" -> {
                 String src = el.absUrl("src");
                 if (src.isEmpty()) src = el.attr("src");
+                // data-src fallback for lazy-loaded images
+                if (src.isEmpty() || src.endsWith(".svg") || src.contains("placeholder")) {
+                    String dataSrc = el.attr("data-src");
+                    if (!dataSrc.isEmpty()) src = el.absUrl("data-src");
+                    if (src.isEmpty()) src = dataSrc;
+                }
                 String alt = el.attr("alt");
                 if (src.isBlank()) yield Collections.emptyList();
                 yield java.util.List.of(new ImageInlineNode(src, alt));
             }
             case "br" -> Collections.emptyList();
+            case "svg" -> parseInlineSvg(el);
+            case "use" -> {
+                String href = el.attr("xlink:href");
+                if (href.isEmpty()) href = el.attr("href");
+                if (!href.startsWith("#")) yield Collections.emptyList();
+                String iconName = href.substring(1);
+                yield java.util.List.of(new ImageInlineNode("mc-icon://" + iconName, iconName));
+            }
             default -> {
                 List<DocNode> children = parseInlineChildren(el);
                 if (children.isEmpty()) {
@@ -499,5 +612,59 @@ public class McmodParser {
             return m.group(1);
         }
         return null;
+    }
+
+    /**
+     * Extracts a URL from CSS background-image style, if present.
+     */
+    private static String extractBackgroundImage(Element el) {
+        String style = el.attr("style");
+        if (style == null || style.isEmpty()) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+            "background(?:-image)?\\s*:\\s*url\\(['\"]?([^)'\"]+)"
+        ).matcher(style);
+        if (m.find()) {
+            String url = m.group(1);
+            if (url.startsWith("//")) url = "https:" + url;
+            if (url.startsWith("http")) return url;
+        }
+        return null;
+    }
+
+    /**
+     * Resolves a mod link's URL, falling back to manual construction
+     * when absUrl fails (e.g. when the base URI is not available).
+     */
+    private static String resolveModUrl(Element linkEl, String pageUrl) {
+        String absUrl = linkEl.absUrl("href");
+        if (absUrl != null && !absUrl.isBlank()) return absUrl;
+        // Fallback: construct from raw href + page URL base
+        String href = linkEl.attr("href");
+        if (href == null || href.isBlank()) return null;
+        if (href.startsWith("http")) return href;
+        if (href.startsWith("//")) return "https:" + href;
+        if (href.startsWith("/") && pageUrl != null && !pageUrl.isBlank()) {
+            int slashIdx = pageUrl.indexOf("/", pageUrl.indexOf("://") + 3);
+            if (slashIdx > 0) {
+                return pageUrl.substring(0, slashIdx) + href;
+            }
+        }
+        return href;
+    }
+
+    /**
+     * Parses an SVG element — finds nested {@code <use>} and extracts icon name.
+     */
+    private static java.util.List<DocNode> parseInlineSvg(Element svgEl) {
+        Element useEl = svgEl.selectFirst("use");
+        if (useEl != null) {
+            String href = useEl.attr("xlink:href");
+            if (href.isEmpty()) href = useEl.attr("href");
+            if (href.startsWith("#")) {
+                String iconName = href.substring(1);
+                return java.util.List.of(new ImageInlineNode("mc-icon://" + iconName, iconName));
+            }
+        }
+        return java.util.Collections.emptyList();
     }
 }

@@ -1,28 +1,17 @@
 package com.cy311.omnisearch.data.client;
 
-import com.cy311.omnisearch.data.model.CaptchaContext;
-import com.cy311.omnisearch.data.model.SearchHit;
-import com.cy311.omnisearch.data.model.SearchQuery;
-import com.cy311.omnisearch.data.parser.McmodParser;
-import com.cy311.omnisearch.data.source.McmodCaptchaHandler;
-import com.cy311.omnisearch.data.source.McmodDataSource;
 import com.sun.net.httpserver.HttpServer;
-import com.sun.net.httpserver.HttpExchange;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -143,7 +132,6 @@ class McmodHttpClientIntegrationTest {
     void cookieStore_savesAndSendsCookies() throws Exception {
         // Create a server that sets cookies
         HttpServer cookieServer = HttpServer.create(new InetSocketAddress(0), 0);
-        int cp = cookieServer.getAddress().getPort();
         cookieServer.createContext("/", exchange -> {
             exchange.getResponseHeaders().add("Set-Cookie", "test_cookie=hello; Path=/");
             byte[] resp = "OK".getBytes(StandardCharsets.UTF_8);

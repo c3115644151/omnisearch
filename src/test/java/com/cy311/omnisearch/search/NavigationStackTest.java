@@ -62,7 +62,6 @@ class NavigationStackTest {
     void multiLevelPushPop() {
         var s1 = SearchState.initial();
         var s2 = s1.withQuery(new SearchQuery("第一页"));
-        var s3 = s2.withQuery(new SearchQuery("第二页"));
 
         var stack = new NavigationStack()
             .push(s1)

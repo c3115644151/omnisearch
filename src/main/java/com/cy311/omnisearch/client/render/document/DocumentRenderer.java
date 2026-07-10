@@ -1,615 +1,363 @@
 package com.cy311.omnisearch.client.render.document;
 
-import com.cy311.omnisearch.data.model.document.*;
+import com.cy311.omnisearch.OmnisearchMod;
+import com.cy311.omnisearch.client.render.image.ImageDimensions;
+import com.cy311.omnisearch.client.render.image.ImageManager;
+import com.cy311.omnisearch.client.render.layout.FontMetrics;
+import com.cy311.omnisearch.client.render.layout.LayoutEngine;
+import com.cy311.omnisearch.client.render.layout.LayoutNode;
+import com.cy311.omnisearch.client.render.layout.LayoutType;
+import com.cy311.omnisearch.data.model.document.Document;
+import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Renders a Document (DocNode tree) onto the screen using GuiGraphics.
- * Each visitXxx method returns the Y position after rendering the node.
+ * Renders a Document onto the screen using GuiGraphics.
  * <p>
- * Layout: text flows left-to-right within a fixed-width area, wrapping at word boundaries.
- * Block-level nodes (headings, paragraphs, tables, lists, images, dividers, sections)
- * each start on a new line. Inline content flows horizontally.
+ * Layout computation ({@link #prepare}) is separated from rendering ({@link #paint}),
+ * so that scrolling only changes the paint offset without re-running layout.
  */
-public class DocumentRenderer implements DocNodeVisitor<Integer> {
+public class DocumentRenderer {
 
-    private static final int PARAGRAPH_SPACING = 4;
-    private static final int LIST_INDENT = 10;
-    private static final int TABLE_PADDING = 2;
     private static final int IMAGE_PLACEHOLDER_WIDTH = 64;
     private static final int IMAGE_PLACEHOLDER_HEIGHT = 48;
 
-    // Heading colors
-    private static final int COLOR_HEADING_1 = 0xFFFFAA00;
-    private static final int COLOR_HEADING_2 = 0xFFFFD700;
-    private static final int COLOR_HEADING_3 = 0xFFFFFFFF;
-    // Link color
-    private static final int COLOR_LINK = 0xFF5555FF;
-    // Table colors
-    private static final int COLOR_TABLE_HEADER_BG = 0xFF333333;
-    private static final int COLOR_TABLE_BORDER = 0xFF555555;
+    // MC GUI sprite locations for inline SVG icon rendering (1.21.1 sprite system)
+    private static final ResourceLocation MC_HEART_CONTAINER = ResourceLocation.withDefaultNamespace("hud/heart/container");
+    private static final ResourceLocation MC_HEART_HALF = ResourceLocation.withDefaultNamespace("hud/heart/half");
+    private static final ResourceLocation MC_HEART_FULL = ResourceLocation.withDefaultNamespace("hud/heart/full");
+    private static final ResourceLocation MC_HUNGER_CONTAINER = ResourceLocation.withDefaultNamespace("hud/hunger/container");
+    private static final ResourceLocation MC_HUNGER_HALF = ResourceLocation.withDefaultNamespace("hud/hunger/half");
+    private static final ResourceLocation MC_HUNGER_FULL = ResourceLocation.withDefaultNamespace("hud/hunger/full");
 
-    private final GuiGraphics gui;
+    /** Tracks unknown mc-icon names we've already logged to avoid spam. */
+    private static final Set<String> loggedUnknownIcons = new HashSet<>();
+
     private final Font font;
-    private int x;
-    private int y;
-    private final int width;
+    private final FontMetrics metrics;
+    @Nullable
+    private final ImageManager imageManager;
 
-    // Inline rendering state
-    private int cursorX;
-    private int inlineY;
-    private boolean inlineMode;
+    // Transient paint state — set at the start of paint()
+    private GuiGraphics gui;
+    private int paintOffsetX;
+    private int paintOffsetY;
 
-    public DocumentRenderer(GuiGraphics gui, Font font, int x, int y, int width) {
-        this.gui = gui;
+    public record LinkHit(int x, int y, int w, int h, String url) {}
+
+    public DocumentRenderer(Font font, @Nullable ImageManager imageManager) {
         this.font = font;
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.inlineMode = false;
+        this.imageManager = imageManager;
+        this.metrics = new FontMetrics(Math.max(1, font.lineHeight), font::width);
     }
 
+    // ── Layout preparation (called when document or width changes) ──
+
     /**
-     * Entry point: renders an entire Document starting from the current position.
+     * Computes layout for the given document and returns a snapshot.
+     * <p>
+     * All coordinates in the snapshot are relative to (0, 0).
+     * Call {@link #paint} to render with a content-area offset.
      */
-    public void render(Document doc) {
-        for (DocNode node : doc.content()) {
-            y = node.accept(this);
+    public PreparedDocumentLayout prepare(Document doc, int width) {
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, width);
+        List<LayoutNode> nodes = engine.layout(doc);
+        int height = engine.getHeight();
+        return new PreparedDocumentLayout(nodes, height);
+    }
+
+    // ── Painting (called every frame, no layout recomputation) ──
+
+    /**
+     * Paints a previously-prepared layout snapshot onto the given graphics context.
+     *
+     * @param g        the graphics context to paint onto
+     * @param layout   the prepared layout snapshot
+     * @param offsetX  absolute X of the content area left edge
+     * @param offsetY  absolute Y of the content area top edge, minus scroll offset
+     */
+    public void paint(GuiGraphics g, PreparedDocumentLayout layout, int offsetX, int offsetY) {
+        this.gui = g;
+        this.paintOffsetX = offsetX;
+        this.paintOffsetY = offsetY;
+        for (LayoutNode node : layout.nodes()) {
+            renderLayoutNode(node);
         }
     }
 
-    // -----------------------------------------------------------
-    // Node visitors
-    // -----------------------------------------------------------
+    // ── Rendering dispatch ──
 
-    @Override
-    public Integer visitHeading(HeadingNode node) {
-        int level = node.getLevel();
-        float scale;
+    private void renderLayoutNode(LayoutNode node) {
+        int rx = node.x + paintOffsetX;
+        int ry = node.y + paintOffsetY;
+        switch (node.type) {
+            case HEADING -> renderHeading(node, rx, ry);
+            case PARAGRAPH -> renderParagraph(node, rx, ry);
+            case TEXT, STYLED_TEXT -> renderInlineTextNode(node, rx, ry);
+            case IMAGE -> renderImageNode(node, rx, ry);
+            case TABLE -> renderTableNode(node, rx, ry);
+            case LIST -> renderListNode(node);
+            case LINK -> renderLinkNode(node, rx, ry);
+            case DIVIDER -> renderDivider(node, rx, ry);
+            case INLINE_TEXT -> renderInlineTextNode(node, rx, ry);
+            case INLINE_IMAGE -> renderInlineImageNode(node, rx, ry);
+            default -> {}
+        }
+    }
+
+    // ── Block rendering ──
+
+    private void renderHeading(LayoutNode node, int rx, int ry) {
+        String text = node.text;
+        if (text == null || text.isEmpty()) return;
         int color;
-
-        if (level == 1) {
-            scale = 1.5f;
-            color = COLOR_HEADING_1;
-        } else if (level == 2) {
-            scale = 1.2f;
-            color = COLOR_HEADING_2;
-        } else {
-            scale = 1.0f;
-            color = COLOR_HEADING_3;
+        switch (node.headingLevel) {
+            case 1 -> color = OmniTheme.TEXT_HEADING_1;
+            case 2 -> color = OmniTheme.TEXT_HEADING_2;
+            default -> color = OmniTheme.TEXT_WHITE;
         }
-
-        String text = collectText(node.getChildren());
-
-        gui.pose().pushPose();
-        // verified: GuiGraphics.pose() returns PoseStack (NeoForge 1.21.1 lexxie.dev 2026-06-14)
-        gui.pose().translate(x, y, 0);
-        gui.pose().scale(scale, scale, 1.0f);
-        // verified: GuiGraphics.drawString(Font, String, int, int, int, boolean) NeoForge 1.21.1 lexxie.dev 2026-06-14
-        gui.drawString(font, text, 0, 0, color, false);
-        gui.pose().popPose();
-
-        int consumedHeight = (int) (font.lineHeight * scale) + PARAGRAPH_SPACING;
-        // verified: Font.lineHeight is final int field (NeoForge 1.21.1 Javadoc 2026-06-14)
-        return y + consumedHeight;
+        gui.drawString(font, text, rx, ry, color, false);
     }
 
-    @Override
-    public Integer visitParagraph(ParagraphNode node) {
-        y += 2;
-        int newY = renderInlineChildren(node.getChildren(), x, y);
-        return newY + PARAGRAPH_SPACING;
+    private void renderParagraph(LayoutNode node, int rx, int ry) {
+        for (LayoutNode inline : node.inlineChildren) {
+            renderLayoutNode(inline);
+        }
+        for (LayoutNode child : node.children) {
+            renderLayoutNode(child);
+        }
     }
 
-    @Override
-    public Integer visitText(TextNode node) {
-        if (inlineMode) {
-            cursorX = renderInlineText(node.getText(), x, cursorX, inlineY, 0xFFFFFFFF, false);
-            return inlineY;
+    private void renderInlineTextNode(LayoutNode node, int rx, int ry) {
+        if (node.text == null || node.text.isEmpty()) return;
+        int color = node.linkUrl != null
+            ? OmniTheme.TEXT_LINK
+            : node.textColor != -1
+                ? node.textColor
+                : (node.type == LayoutType.STYLED_TEXT ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE);
+        gui.drawString(font, node.text, rx, ry, color, false);
+        if (node.isBold) {
+            gui.drawString(font, node.text, rx + 1, ry, color, false);
         }
-        return renderTextLine(node.getText(), x, y, 0xFFFFFFFF, false);
+        if (node.linkUrl != null) {
+            gui.hLine(rx, rx + Math.max(0, node.w - 1), ry + font.lineHeight - 1, OmniTheme.TEXT_LINK);
+        }
     }
 
-    @Override
-    public Integer visitStyledText(StyledTextNode node) {
-        TextStyle style = node.getStyle();
-        int color = parseColor(style.color(), 0xFFFFFFFF);
-        boolean bold = style.bold();
+    private void renderImageNode(LayoutNode node, int rx, int ry) {
+        String url = node.imageUrl;
+        int imgX = rx;
+        int imgY = ry;
 
-        if (inlineMode) {
-            int startX = cursorX;
-            cursorX = renderInlineText(node.getText(), x, cursorX, inlineY, color, bold);
-            if (style.underline()) {
-                gui.hLine(startX, cursorX - 1, inlineY + font.lineHeight - 1, color);
-                // verified: GuiGraphics.hLine(int,int,int,int) NeoForge 1.21.1 mappings.dev 2026-06-14
+        if (imageManager != null && url != null && !url.isBlank()) {
+            ResourceLocation loc = imageManager.getImage(url).getNow(null);
+            if (loc != null) {
+                ImageDimensions dims = imageManager.getCachedSize(url);
+                int renderW = dims != null ? Math.min(dims.width(), node.w) : IMAGE_PLACEHOLDER_WIDTH;
+                int renderH = dims != null
+                    ? (int) ((float) renderW / dims.width() * dims.height())
+                    : IMAGE_PLACEHOLDER_HEIGHT;
+                gui.blit(loc, imgX, imgY, 0, 0, renderW, renderH, renderW, renderH);
+                return;
             }
-            return inlineY;
         }
 
-        return renderStyledTextBlock(node, color, bold);
+        // Placeholder fallback
+        gui.fill(imgX, imgY, imgX + IMAGE_PLACEHOLDER_WIDTH, imgY + IMAGE_PLACEHOLDER_HEIGHT, OmniTheme.BG_PLACEHOLDER);
+        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, OmniTheme.BORDER_PLACEHOLDER);
+        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
+        gui.vLine(imgX, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
+        gui.vLine(imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
+
+        String alt = node.alt;
+        if (alt != null && !alt.isEmpty()) {
+            gui.drawString(font, alt, imgX, imgY + IMAGE_PLACEHOLDER_HEIGHT + 1, OmniTheme.TEXT_GRAY, false);
+        }
     }
 
-    private int renderStyledTextBlock(StyledTextNode node, int color, boolean bold) {
-        String text = node.getText();
-        int textWidth = font.width(text);
+    private void renderInlineImageNode(LayoutNode node, int rx, int ry) {
+        String url = node.imageUrl;
+        int iconSize = node.w;
 
-        if (textWidth <= width) {
-            gui.drawString(font, text, x, y, color, false);
-            if (bold) {
-                gui.drawString(font, text, x + 1, y, color, false);
+        // SVG inline icon (mc-icon://) — render using MC's GUI sprite system
+        if (url != null && url.startsWith("mc-icon://")) {
+            String iconName = url.substring("mc-icon://".length());
+            if (tryRenderMcIcon(iconName, rx, ry, iconSize)) {
+                return;
             }
-            if (node.getStyle().underline()) {
-                gui.hLine(x, x + textWidth - 1, y + font.lineHeight - 1, color);
-            }
-            return y + font.lineHeight;
+            logUnknownIconOnce(iconName);
+            // Fallback: render readable abbreviation
+            String abbr = abbreviateIconName(iconName);
+            gui.drawString(font, abbr, rx, ry, 0xFF888888, false);
+            return;
         }
 
-        // Word wrap
-        int currentY = y;
-        String remaining = text;
-        int availWidth = width;
-
-        while (!remaining.isEmpty() && font.width(remaining) > availWidth) {
-            String line = font.plainSubstrByWidth(remaining, availWidth);
-            // verified: Font.plainSubstrByWidth(String, int) NeoForge 1.21.1 lexxie.dev 2026-06-14
-            int lastSpace = line.lastIndexOf(' ');
-            if (lastSpace > 0) {
-                line = remaining.substring(0, lastSpace);
-            }
-
-            gui.drawString(font, line, x, currentY, color, false);
-            if (bold) {
-                gui.drawString(font, line, x + 1, currentY, color, false);
-            }
-            currentY += font.lineHeight;
-            remaining = remaining.substring(line.length()).trim();
-        }
-
-        if (!remaining.isEmpty()) {
-            gui.drawString(font, remaining, x, currentY, color, false);
-            if (bold) {
-                gui.drawString(font, remaining, x + 1, currentY, color, false);
-            }
-            currentY += font.lineHeight;
-        }
-
-        return currentY;
-    }
-
-    @Override
-    public Integer visitLink(LinkNode node) {
-        if (inlineMode) {
-            for (DocNode child : node.getChildren()) {
-                if (child instanceof TextNode tn) {
-                    int startX = cursorX;
-                    cursorX = renderInlineText(tn.getText(), x, cursorX, inlineY, COLOR_LINK, false);
-                    gui.hLine(startX, cursorX - 1, inlineY + font.lineHeight - 1, COLOR_LINK);
-                } else if (child instanceof StyledTextNode stn) {
-                    int startX = cursorX;
-                    cursorX = renderInlineText(stn.getText(), x, cursorX, inlineY, COLOR_LINK, false);
-                    gui.hLine(startX, cursorX - 1, inlineY + font.lineHeight - 1, COLOR_LINK);
-                } else {
-                    child.accept(this);
-                }
-            }
-            return inlineY;
-        }
-
-        // Block-level link: render children as inline blue text
-        int currentY = y;
-        int cx = x;
-        for (DocNode child : node.getChildren()) {
-            if (child instanceof TextNode tn) {
-                gui.drawString(font, tn.getText(), cx, currentY, COLOR_LINK, false);
-                int w = font.width(tn.getText());
-                gui.hLine(cx, cx + w - 1, currentY + font.lineHeight - 1, COLOR_LINK);
-                cx += w;
-            } else if (child instanceof StyledTextNode stn) {
-                gui.drawString(font, stn.getText(), cx, currentY, COLOR_LINK, false);
-                int w = font.width(stn.getText());
-                gui.hLine(cx, cx + w - 1, currentY + font.lineHeight - 1, COLOR_LINK);
-                cx += w;
-            } else {
-                currentY = child.accept(this);
-                cx = x;
+        if (imageManager != null && url != null && !url.isBlank()) {
+            ResourceLocation loc = imageManager.getImage(url).getNow(null);
+            if (loc != null) {
+                gui.blit(loc, rx, ry, 0, 0, iconSize, iconSize, iconSize, iconSize);
+                return;
             }
         }
-        return currentY + font.lineHeight;
-    }
-
-    @Override
-    public Integer visitTable(TableNode node) {
-        List<String> headers = node.getHeaders();
-        int colCount = headers.size();
-        if (colCount == 0) return y;
-
-        // Calculate column widths
-        int[] colWidths = new int[colCount];
-        int totalWidth = 0;
-        for (int i = 0; i < colCount; i++) {
-            colWidths[i] = font.width(headers.get(i)) + TABLE_PADDING * 4;
-            for (List<DocNode> row : node.getRows()) {
-                if (i < row.size()) {
-                    String cellText = collectText(List.of(row.get(i)));
-                    int cellW = font.width(cellText) + TABLE_PADDING * 4;
-                    if (cellW > colWidths[i]) colWidths[i] = cellW;
-                }
-            }
-            totalWidth += colWidths[i];
-        }
-
-        // Clamp to available width
-        if (totalWidth > width) {
-            float ratio = (float) width / totalWidth;
-            int newTotal = 0;
-            for (int i = 0; i < colCount; i++) {
-                colWidths[i] = Math.max(10, (int) (colWidths[i] * ratio));
-                newTotal += colWidths[i];
-            }
-            totalWidth = newTotal;
-        }
-
-        int tableX = x;
-        int currentY = y;
-
-        // Draw header background
-        gui.fill(tableX, currentY, tableX + totalWidth, currentY + font.lineHeight + TABLE_PADDING * 2, COLOR_TABLE_HEADER_BG);
-        // verified: GuiGraphics.fill(int,int,int,int,int) NeoForge 1.21.1 lexxie.dev 2026-06-14
-
-        // Draw header text
-        int cx = tableX + TABLE_PADDING;
-        for (int i = 0; i < colCount; i++) {
-            gui.drawString(font, headers.get(i), cx, currentY + TABLE_PADDING, 0xFFFFFFFF, false);
-            gui.drawString(font, headers.get(i), cx + 1, currentY + TABLE_PADDING, 0xFFFFFFFF, false);
-            cx += colWidths[i];
-        }
-
-        currentY += font.lineHeight + TABLE_PADDING * 2;
-
-        // Draw rows
-        for (int rowIdx = 0; rowIdx < node.getRows().size(); rowIdx++) {
-            List<DocNode> row = node.getRows().get(rowIdx);
-            int rowY = currentY;
-
-            // Row border
-            gui.hLine(tableX, tableX + totalWidth - 1, rowY, COLOR_TABLE_BORDER);
-
-            // Determine row height
-            int maxLineHeight = font.lineHeight;
-            for (int i = 0; i < Math.min(colCount, row.size()); i++) {
-                String text = collectText(List.of(row.get(i)));
-                int lines = 1;
-                int cellAvail = colWidths[i] - TABLE_PADDING * 2;
-                if (font.width(text) > cellAvail && cellAvail > 0) {
-                    lines = Math.max(1, (int) Math.ceil((float) font.width(text) / cellAvail));
-                }
-                int rowH = lines * font.lineHeight + TABLE_PADDING * 2;
-                if (rowH > maxLineHeight) maxLineHeight = rowH;
-            }
-
-            // Alternating row background
-            if (rowIdx % 2 == 1) {
-                gui.fill(tableX, rowY, tableX + totalWidth, rowY + maxLineHeight, 0xFF222222);
-            }
-
-            // Cell content
-            cx = tableX + TABLE_PADDING;
-            for (int i = 0; i < Math.min(colCount, row.size()); i++) {
-                String text = collectText(List.of(row.get(i)));
-                int cellWidth = colWidths[i] - TABLE_PADDING * 2;
-                if (font.width(text) > cellWidth && cellWidth > 0) {
-                    String truncated = font.plainSubstrByWidth(text, cellWidth);
-                    gui.drawString(font, truncated, cx, rowY + TABLE_PADDING, 0xFFFFFFFF, false);
-                } else {
-                    gui.drawString(font, text, cx, rowY + TABLE_PADDING, 0xFFFFFFFF, false);
-                }
-                cx += colWidths[i];
-            }
-
-            currentY += maxLineHeight;
-        }
-
-        // Bottom border
-        gui.hLine(tableX, tableX + totalWidth - 1, currentY, COLOR_TABLE_BORDER);
-        // Side borders
-        gui.vLine(tableX, y, currentY, COLOR_TABLE_BORDER);
-        gui.vLine(tableX + totalWidth - 1, y, currentY, COLOR_TABLE_BORDER);
-        // verified: GuiGraphics.vLine(int,int,int,int) NeoForge 1.21.1 mappings.dev 2026-06-14
-
-        return currentY + PARAGRAPH_SPACING;
-    }
-
-    @Override
-    public Integer visitList(ListNode node) {
-        List<DocNode> items = node.getItems();
-        int currentY = y;
-
-        for (int i = 0; i < items.size(); i++) {
-            // Render marker
-            String marker = node.isOrdered() ? (i + 1) + "." : "\u2022";
-            gui.drawString(font, marker, x, currentY, 0xFFFFFFFF, false);
-
-            // Render item content indented
-            int itemX = x + LIST_INDENT;
-            DocNode item = items.get(i);
-            if (item instanceof ParagraphNode pn) {
-                currentY = renderInlineChildren(pn.getChildren(), itemX, currentY);
-            } else {
-                currentY = renderTextLine(collectText(List.of(item)), itemX, currentY, 0xFFFFFFFF, false);
-            }
-        }
-
-        return currentY + PARAGRAPH_SPACING;
-    }
-
-    @Override
-    public Integer visitImage(ImageNode node) {
-        int imgX = x;
-        int imgY = y;
-
-        // Placeholder rectangle
-        gui.fill(imgX, imgY, imgX + IMAGE_PLACEHOLDER_WIDTH, imgY + IMAGE_PLACEHOLDER_HEIGHT, 0xFF444444);
-        // Border
-        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, 0xFF888888);
-        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, 0xFF888888);
-        gui.vLine(imgX, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, 0xFF888888);
-        gui.vLine(imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, 0xFF888888);
-
-        // Alt text
-        String alt = node.getAlt();
-        if (!alt.isEmpty()) {
-            gui.drawString(font, alt, imgX, imgY + IMAGE_PLACEHOLDER_HEIGHT + 1, 0xFFAAAAAA, false);
-        }
-
-        int altLines = alt.isEmpty() ? 0 : 1;
-        int consumedHeight = IMAGE_PLACEHOLDER_HEIGHT + altLines * (font.lineHeight + 1) + PARAGRAPH_SPACING;
-        return y + consumedHeight;
-    }
-
-    @Override
-    public Integer visitImageInline(ImageInlineNode node) {
-        int iconSize = font.lineHeight;
-
-        if (inlineMode) {
-            if (cursorX + iconSize > x + width && cursorX > x) {
-                inlineY += font.lineHeight;
-                cursorX = x;
-            }
-        }
-
-        gui.fill(cursorX, inlineY, cursorX + iconSize, inlineY + iconSize, 0xFF444444);
-        gui.vLine(cursorX, inlineY, inlineY + iconSize - 1, 0xFF888888);
-        gui.vLine(cursorX + iconSize - 1, inlineY, inlineY + iconSize - 1, 0xFF888888);
-        gui.hLine(cursorX, cursorX + iconSize - 1, inlineY, 0xFF888888);
-        gui.hLine(cursorX, cursorX + iconSize - 1, inlineY + iconSize - 1, 0xFF888888);
-
-        String alt = node.getAlt();
-        if (!alt.isEmpty()) {
-            gui.drawString(font, alt.substring(0, 1), cursorX + 1, inlineY, 0xFFAAAAAA, false);
-        }
-
-        cursorX += iconSize + 2;
-
-        if (inlineMode) return inlineY;
-        return y + font.lineHeight;
-    }
-
-    @Override
-    public Integer visitDivider(DividerNode node) {
-        int midY = y + font.lineHeight / 2;
-        int margin = Math.min(10, width / 8);
-        int dividerX = x + margin;
-        int dividerWidth = width - 2 * margin;
-        if (dividerWidth < 0) dividerWidth = width;
-
-        gui.hLine(dividerX, dividerX + dividerWidth, midY, 0xFF888888);
-        return y + font.lineHeight + PARAGRAPH_SPACING;
-    }
-
-    @Override
-    public Integer visitSection(SectionNode node) {
-        // Title as heading level 2
-        HeadingNode heading = new HeadingNode(2, List.of(new TextNode(node.getTitle())));
-        int newY = visitHeading(heading);
-
-        int savedX = this.x;
-        int savedY = this.y;
-        this.x = savedX + 4;
-        this.y = newY;
-
-        for (DocNode child : node.getChildren()) {
-            this.y = child.accept(this);
-        }
-
-        this.x = savedX;
-        int resultY = this.y;
-        this.y = savedY;
-        return resultY;
-    }
-
-    // -----------------------------------------------------------
-    // Private helpers
-    // -----------------------------------------------------------
-
-    /**
-     * Renders a list of child nodes as inline content (flowing horizontally with word wrap).
-     */
-    private int renderInlineChildren(List<DocNode> children, int startX, int startY) {
-        boolean prevInline = inlineMode;
-        int prevCursorX = cursorX;
-        int prevInlineY = inlineY;
-
-        inlineMode = true;
-        cursorX = startX;
-        inlineY = startY;
-
-        for (DocNode child : children) {
-            if (isBlockNode(child)) {
-                // Flush current line
-                if (cursorX > x) {
-                    inlineY += font.lineHeight;
-                    cursorX = x;
-                }
-                int savedBlockX = this.x;
-                this.x = x;
-                this.y = inlineY;
-                inlineY = child.accept(this);
-                this.x = savedBlockX;
-                cursorX = x;
-            } else {
-                child.accept(this);
-            }
-        }
-
-        int resultY = inlineY + font.lineHeight;
-
-        inlineMode = prevInline;
-        cursorX = prevCursorX;
-        inlineY = prevInlineY;
-
-        return resultY;
-    }
-
-    private static boolean isBlockNode(DocNode node) {
-        return node instanceof ImageNode
-            || node instanceof TableNode
-            || node instanceof ListNode
-            || node instanceof DividerNode
-            || node instanceof SectionNode
-            || node instanceof HeadingNode;
-    }
-
-    /**
-     * Renders inline text with word wrapping. Returns the new cursorX.
-     */
-    private int renderInlineText(String text, int leftMargin, int currentX, int currentY, int color, boolean bold) {
-        if (text.isEmpty()) return currentX;
-
-        int textWidth = font.width(text);
-        int maxLineWidth = width - (currentX - leftMargin);
-
-        if (textWidth <= maxLineWidth) {
-            // Fits on current line
-            gui.drawString(font, text, currentX, currentY, color, false);
-            if (bold) {
-                gui.drawString(font, text, currentX + 1, currentY, color, false);
-            }
-            return currentX + textWidth;
-        }
-
-        // Wrap by words
-        String[] words = text.split(" ");
-        int cx = currentX;
-
-        for (int i = 0; i < words.length; i++) {
-            String word = words[i];
-            int wordW = font.width(word);
-
-            if (cx + wordW > leftMargin + width && cx > leftMargin) {
-                inlineY += font.lineHeight;
-                cx = leftMargin;
-            }
-
-            // Add space before word (except first)
-            if (i > 0) {
-                gui.drawString(font, " ", cx, inlineY, color, false);
-                cx += font.width(" ");
-            }
-
-            gui.drawString(font, word, cx, inlineY, color, false);
-            if (bold) {
-                gui.drawString(font, word, cx + 1, inlineY, color, false);
-            }
-            cx += wordW;
-        }
-
-        return cx;
-    }
-
-    /**
-     * Renders a single text line with word wrapping. Returns the new Y.
-     */
-    private int renderTextLine(String text, int startX, int startY, int color, boolean bold) {
-        if (text.isEmpty()) return startY + font.lineHeight;
-
-        if (font.width(text) <= width) {
-            gui.drawString(font, text, startX, startY, color, false);
-            if (bold) {
-                gui.drawString(font, text, startX + 1, startY, color, false);
-            }
-            return startY + font.lineHeight;
-        }
-
-        int currentY = startY;
-        String remaining = text;
-
-        while (!remaining.isEmpty() && font.width(remaining) > width) {
-            String line = font.plainSubstrByWidth(remaining, width);
-            int lastSpace = line.lastIndexOf(' ');
-            if (lastSpace > 0) {
-                line = remaining.substring(0, lastSpace);
-            }
-
-            gui.drawString(font, line, startX, currentY, color, false);
-            if (bold) {
-                gui.drawString(font, line, startX + 1, currentY, color, false);
-            }
-            currentY += font.lineHeight;
-            remaining = remaining.substring(line.length()).trim();
-        }
-
-        if (!remaining.isEmpty()) {
-            gui.drawString(font, remaining, startX, currentY, color, false);
-            if (bold) {
-                gui.drawString(font, remaining, startX + 1, currentY, color, false);
-            }
-            currentY += font.lineHeight;
-        }
-
-        return currentY;
-    }
-
-    /**
-     * Collects text from a list of nodes recursively.
-     */
-    private static String collectText(List<DocNode> nodes) {
-        StringBuilder sb = new StringBuilder();
-        collectTextRecursive(nodes, sb);
-        return sb.toString();
-    }
-
-    private static void collectTextRecursive(List<DocNode> nodes, StringBuilder sb) {
-        for (DocNode node : nodes) {
-            if (node instanceof TextNode tn) {
-                sb.append(tn.getText());
-            } else if (node instanceof StyledTextNode stn) {
-                sb.append(stn.getText());
-            } else if (node instanceof LinkNode ln) {
-                collectTextRecursive(ln.getChildren(), sb);
-            } else if (node instanceof HeadingNode hn) {
-                collectTextRecursive(hn.getChildren(), sb);
-            } else if (node instanceof ParagraphNode pn) {
-                collectTextRecursive(pn.getChildren(), sb);
-            }
+        gui.fill(rx, ry, rx + iconSize, ry + iconSize, OmniTheme.BG_PLACEHOLDER);
+        String alt = node.alt;
+        if (alt != null && !alt.isEmpty()) {
+            gui.drawString(font, alt.substring(0, 1), rx + 1, ry, OmniTheme.TEXT_GRAY, false);
         }
     }
 
     /**
-     * Parses a hex color string (e.g. "#FFAA00") to ARGB int, or returns default on null.
+     * Maps mcmod.cn SVG icon names to Minecraft's GUI sprite system (1.21.1).
+     * Returns true if the icon was recognized and rendered via blitSprite.
      */
-    private static int parseColor(@Nullable String colorStr, int defaultColor) {
-        if (colorStr == null || colorStr.isEmpty()) return defaultColor;
-        try {
-            if (colorStr.startsWith("#")) {
-                return 0xFF000000 | Integer.parseInt(colorStr.substring(1), 16);
-            }
-            return 0xFF000000 | Integer.parseInt(colorStr, 16);
-        } catch (NumberFormatException e) {
-            return defaultColor;
+    private boolean tryRenderMcIcon(String iconName, int x, int y, int size) {
+        // Determine icon state: full, half, or empty/container
+        boolean isHalf = iconName.contains("-half");
+        boolean isEmpty = iconName.contains("-empty") || iconName.contains("-container");
+        String key = iconName
+            .replace("icon-", "")
+            .replace("-full", "")
+            .replace("-half", "")
+            .replace("-empty", "")
+            .replace("-container", "");
+        ResourceLocation sprite;
+        switch (key) {
+            case "health" -> sprite = isEmpty ? MC_HEART_CONTAINER : isHalf ? MC_HEART_HALF : MC_HEART_FULL;
+            case "hunger" -> sprite = isEmpty ? MC_HUNGER_CONTAINER : isHalf ? MC_HUNGER_HALF : MC_HUNGER_FULL;
+            default -> { return false; }
         }
+        gui.blitSprite(sprite, x, y, size, size);
+        return true;
+    }
+
+    /**
+     * Produces a compact, readable fallback label for mc-icon names
+     * that cannot be mapped to an MC sprite.
+     */
+    private static String abbreviateIconName(String iconName) {
+        String raw = iconName
+            .replace("icon-", "")
+            .replace("-full", "")
+            .replace("-half", "")
+            .replace("-empty", "")
+            .replace("-container", "");
+        // Known abbreviations for common mcmod.cn icons without MC sprite equivalents
+        return switch (raw) {
+            case "experience", "exp" -> "[exp]";
+            case "saturation", "sat" -> "[sat]";
+            case "armor" -> "[armor]";
+            case "air" -> "[air]";
+            case "speed" -> "[spd]";
+            case "slowness" -> "[slow]";
+            case "haste" -> "[hast]";
+            case "mining-fatigue" -> "[fatig]";
+            case "strength" -> "[str]";
+            case "weakness" -> "[weak]";
+            case "jump-boost" -> "[jump]";
+            case "resistance" -> "[res]";
+            case "fire-resistance" -> "[fire]";
+            case "water-breathing" -> "[water]";
+            case "invisibility" -> "[invis]";
+            case "night-vision" -> "[nv]";
+            case "regeneration" -> "[regen]";
+            case "poison" -> "[pois]";
+            case "wither" -> "[with]";
+            case "absorption" -> "[abso]";
+            case "health-boost" -> "[hboost]";
+            case "glowing" -> "[glow]";
+            case "levitation" -> "[lev]";
+            case "luck" -> "[luck]";
+            case "bad-luck", "unluck" -> "[unlck]";
+            case "slow-falling" -> "[slowf]";
+            case "conduit-power" -> "[cond]";
+            case "dolphins-grace" -> "[dolph]";
+            case "darkness" -> "[dark]";
+            default -> {
+                // Fallback: take first 4 chars of the cleaned name
+                String shortLabel = raw.length() > 4 ? raw.substring(0, 4) : raw;
+                yield "[" + shortLabel + "]";
+            }
+        };
+    }
+
+    /** Logs unknown mc-icon names once per session to aid systematic discovery. */
+    private static void logUnknownIconOnce(String iconName) {
+        if (loggedUnknownIcons.add(iconName)) {
+            OmnisearchMod.LOGGER.warn("[DocRenderer] Unmapped mc-icon: {} — add to tryRenderMcIcon or abbreviation table", iconName);
+        }
+    }
+
+    private void renderLinkNode(LayoutNode node, int rx, int ry) {
+        for (LayoutNode child : node.inlineChildren) {
+            renderLayoutNode(child);
+        }
+    }
+
+    private void renderTableNode(LayoutNode node, int rx, int ry) {
+        int rowH = font.lineHeight + 4;
+
+        for (int i = 0; i < node.children.size(); i++) {
+            LayoutNode cell = node.children.get(i);
+            int cx = cell.x + paintOffsetX;
+            int cy = cell.y + paintOffsetY;
+            int color = cell.isHeader ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE;
+
+            // Background
+            if (cell.isHeader) {
+                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + rowH, OmniTheme.BG_TABLE_HEADER);
+            } else if (i % 4 == 0) {
+                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + rowH, OmniTheme.BG_ROW_ALT);
+            }
+
+            // Cell content: inline children (icons + text) or plain text fallback
+            if (!cell.inlineChildren.isEmpty()) {
+                for (LayoutNode inline : cell.inlineChildren) {
+                    renderLayoutNode(inline);
+                }
+            } else if (cell.text != null && !cell.text.isEmpty()) {
+                gui.drawString(font, cell.text, cx, cy + 2, color, false);
+                if (cell.isHeader) {
+                    gui.drawString(font, cell.text, cx + 1, cy + 2, color, false);
+                }
+            }
+        }
+        // Borders
+        if (!node.children.isEmpty()) {
+            int tableY = node.y + paintOffsetY;
+            int tableEndY = node.y + node.h + paintOffsetY;
+            LayoutNode first = node.children.getFirst();
+            LayoutNode last = node.children.getLast();
+            int tableX = first.x + paintOffsetX - 2;
+            int tableEndX = last.x + last.w + paintOffsetX + 2;
+            gui.hLine(tableX, tableEndX, tableY, OmniTheme.BORDER);
+            gui.hLine(tableX, tableEndX, tableEndY, OmniTheme.BORDER);
+            gui.vLine(tableX, tableY, tableEndY, OmniTheme.BORDER);
+            gui.vLine(tableEndX, tableY, tableEndY, OmniTheme.BORDER);
+        }
+    }
+
+    private void renderListNode(LayoutNode node) {
+        for (int i = 0; i < node.children.size(); i++) {
+            LayoutNode child = node.children.get(i);
+            if (child.type == LayoutType.TEXT && child.text != null) {
+                int cx = child.x + paintOffsetX;
+                int cy = child.y + paintOffsetY;
+                boolean isMarker = child.text.length() <= 3 && (child.text.contains("•") || Character.isDigit(child.text.charAt(0)));
+                int color = isMarker ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE;
+                gui.drawString(font, child.text, cx, cy, color, false);
+            }
+        }
+    }
+
+    private void renderDivider(LayoutNode node, int rx, int ry) {
+        int midY = ry + font.lineHeight / 2;
+        gui.hLine(rx, rx + node.w, midY, OmniTheme.BORDER_PLACEHOLDER);
     }
 }

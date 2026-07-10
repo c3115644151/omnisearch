@@ -1,9 +1,8 @@
 package com.cy311.omnisearch.data.repository;
 
 import com.cy311.omnisearch.data.model.*;
+import com.cy311.omnisearch.data.source.CaptchaCapableDataSource;
 import com.cy311.omnisearch.data.source.DataSource;
-import com.cy311.omnisearch.data.source.McmodCaptchaHandler;
-import com.cy311.omnisearch.data.source.McmodDataSource;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -12,13 +11,15 @@ import java.util.concurrent.CompletionException;
 public class SearchRepository {
     private final CacheLayer cache;
     private final DataSource primarySource;
-    private final McmodCaptchaHandler captchaHandler;
 
     public SearchRepository(CacheLayer cache, DataSource primarySource) {
         this.cache = cache;
         this.primarySource = primarySource;
-        this.captchaHandler = primarySource instanceof McmodDataSource mds
-            ? new McmodCaptchaHandler() : null;
+    }
+
+    /** Clears all cached data. Force-refreshes on next request. */
+    public void clearCache() {
+        cache.clear();
     }
 
     public CompletableFuture<List<SearchHit>> search(SearchQuery query) {
@@ -67,8 +68,8 @@ public class SearchRepository {
      * Submits a CAPTCHA answer and retries the original search.
      */
     public CompletableFuture<List<SearchHit>> submitCaptcha(SearchQuery originalQuery, CaptchaContext captcha, String answer) {
-        if (primarySource instanceof McmodDataSource mds) {
-            return mds.submitCaptcha(originalQuery, captcha, answer)
+        if (primarySource instanceof CaptchaCapableDataSource source) {
+            return source.submitCaptcha(originalQuery, captcha, answer)
                 .thenApply(results -> {
                     cache.putSearchResults(originalQuery, results);
                     return results;
@@ -81,13 +82,25 @@ public class SearchRepository {
      * Submits a CAPTCHA answer and retries the original page request.
      */
     public CompletableFuture<ItemPage> submitCaptchaForPage(String pageId, CaptchaContext captcha, String answer) {
-        if (primarySource instanceof McmodDataSource mds) {
-            return mds.submitCaptchaForPage(pageId, captcha, answer)
+        if (primarySource instanceof CaptchaCapableDataSource source) {
+            return source.submitCaptchaForPage(pageId, captcha, answer)
                 .thenApply(page -> {
                     if (page != null) cache.putPage(pageId, page);
                     return page;
                 });
         }
         return CompletableFuture.failedFuture(new UnsupportedOperationException("CAPTCHA not supported by this data source"));
+    }
+
+    public CompletableFuture<PendingRequestResult> resumeAfterCaptcha(PendingRequest pending, CaptchaContext captcha, String answer) {
+        if (pending == null) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Missing pending request"));
+        }
+        return switch (pending) {
+            case PendingRequest.Search search -> submitCaptcha(search.query(), captcha, answer)
+                .thenApply(PendingRequestResult.SearchResults::new);
+            case PendingRequest.Detail detail -> submitCaptchaForPage(detail.pageId(), captcha, answer)
+                .thenApply(PendingRequestResult.DetailPage::new);
+        };
     }
 }

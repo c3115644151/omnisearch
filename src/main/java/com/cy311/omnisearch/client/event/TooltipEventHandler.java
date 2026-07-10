@@ -5,6 +5,7 @@ import com.cy311.omnisearch.client.screen.OmnisearchScreen;
 import com.cy311.omnisearch.data.repository.CacheLayer;
 import com.cy311.omnisearch.data.repository.SearchRepository;
 import com.cy311.omnisearch.data.source.McmodDataSource;
+import com.cy311.omnisearch.data.client.McmodHttpClient;
 import com.cy311.omnisearch.keybinds.KeyBinds;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -29,12 +30,14 @@ public class TooltipEventHandler {
     private static final long HOLD_THRESHOLD_MS = 1000; // 1 second hold
 
     private static SearchRepository repository;
+    private static McmodHttpClient httpClient;
 
     private static synchronized SearchRepository getRepository() {
         if (repository == null) {
             var mc = Minecraft.getInstance();
             var cacheDir = mc.gameDirectory.toPath().resolve(".omnisearch/cache");
-            repository = new SearchRepository(new CacheLayer(cacheDir), new McmodDataSource());
+            httpClient = new McmodHttpClient();
+            repository = new SearchRepository(new CacheLayer(cacheDir), new McmodDataSource(httpClient));
         }
         return repository;
     }
@@ -43,7 +46,8 @@ public class TooltipEventHandler {
     public static void onKeyInput(InputEvent.Key event) {
         if (KeyBinds.openSearch.consumeClick()) {
             Minecraft.getInstance().tell(() ->
-                Minecraft.getInstance().setScreen(new OmnisearchScreen(getRepository()))
+                Minecraft.getInstance().setScreen(
+                    new OmnisearchScreen(getRepository(), httpClient != null ? httpClient::downloadImageBytes : null))
             );
         }
     }
@@ -69,7 +73,8 @@ public class TooltipEventHandler {
                 longPressTriggered = true;
                 String itemName = stack.getHoverName().getString();
                 Minecraft.getInstance().tell(() ->
-                    Minecraft.getInstance().setScreen(new OmnisearchScreen(getRepository()))
+                    Minecraft.getInstance().setScreen(
+                        new OmnisearchScreen(getRepository(), httpClient != null ? httpClient::downloadImageBytes : null))
                 );
             }
         } else {

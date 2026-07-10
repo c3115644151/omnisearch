@@ -17,13 +17,13 @@ class McmodHttpClientTest {
     @Test
     void buildSearchUrlNormal() {
         String url = McmodHttpClient.buildSearchUrl("娜迦");
-        assertEquals("https://search.mcmod.cn/s?key=%E5%A8%9C%E8%BF%A6&filter=3", url);
+        assertEquals("https://search.mcmod.cn/s?key=%E5%A8%9C%E8%BF%A6", url);
     }
 
     @Test
     void buildSearchUrlAscii() {
         String url = McmodHttpClient.buildSearchUrl("diamond");
-        assertEquals("https://search.mcmod.cn/s?key=diamond&filter=3", url);
+        assertEquals("https://search.mcmod.cn/s?key=diamond", url);
     }
 
     @Test
@@ -31,7 +31,6 @@ class McmodHttpClientTest {
         String url = McmodHttpClient.buildSearchUrl("a&b=c d");
         assertAll(
             () -> assertTrue(url.startsWith("https://search.mcmod.cn/s?key=")),
-            () -> assertTrue(url.contains("&filter=3")),
             () -> assertTrue(url.contains("%26"), "& should be URL-encoded"),   // &
             () -> assertTrue(url.contains("%3D"), "= should be URL-encoded"),   // =
             () -> assertTrue(url.contains("+"), "space should be encoded as +")
@@ -41,7 +40,7 @@ class McmodHttpClientTest {
     @Test
     void buildSearchUrlEmptyQuery() {
         String url = McmodHttpClient.buildSearchUrl("");
-        assertEquals("https://search.mcmod.cn/s?key=&filter=3", url);
+        assertEquals("https://search.mcmod.cn/s?key=", url);
     }
 
     @Test
@@ -71,9 +70,9 @@ class McmodHttpClientTest {
     }
 
     @Test
-    void searchUrlContainsFilter3() {
+    void searchUrlContainsEncodedQuery() {
         String url = McmodHttpClient.buildSearchUrl("test");
-        assertTrue(url.endsWith("&filter=3"));
+        assertTrue(url.contains("key=test"));
     }
 
     // ══════════════════════════════════════════════

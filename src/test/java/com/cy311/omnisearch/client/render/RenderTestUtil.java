@@ -69,6 +69,7 @@ public class RenderTestUtil {
      * Records all drawString invocations and returns the (text, x, y, color) tuples.
      */
     public record DrawCall(String text, int x, int y, int color) {}
+    public record SpriteCall(String sprite, int x, int y, int width, int height) {}
 
     public static List<DrawCall> getDrawCalls(GuiGraphics gui) {
         var invocations = mockingDetails(gui).getInvocations();
@@ -81,6 +82,22 @@ public class RenderTestUtil {
                 int y = args[3] instanceof Number n ? n.intValue() : 0;
                 int color = args[4] instanceof Number n ? n.intValue() : 0;
                 return new DrawCall(text, x, y, color);
+            })
+            .toList();
+    }
+
+    public static List<SpriteCall> getSpriteCalls(GuiGraphics gui) {
+        var invocations = mockingDetails(gui).getInvocations();
+        return invocations.stream()
+            .filter(i -> i.getMethod().getName().equals("blitSprite"))
+            .map(i -> {
+                Object[] args = i.getArguments();
+                String sprite = String.valueOf(args[0]);
+                int x = args[1] instanceof Number n ? n.intValue() : 0;
+                int y = args[2] instanceof Number n ? n.intValue() : 0;
+                int width = args[3] instanceof Number n ? n.intValue() : 0;
+                int height = args[4] instanceof Number n ? n.intValue() : 0;
+                return new SpriteCall(sprite, x, y, width, height);
             })
             .toList();
     }

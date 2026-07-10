@@ -14,9 +14,7 @@ import static org.mockito.Mockito.*;
 
 class ResultListWidgetTest {
 
-    private static final int DARK_BG = 0xFF1A1A1A;
-    private static final int TEXT_WHITE = 0xFFFFFFFF;
-    private static final int TEXT_SOURCE_MOD = 0xFFAAAAAA;
+    private static final int DARK_BG = 0xCC000000;
     private static final int HIGHLIGHT_BORDER = 0xFFFFFFFF;
 
     private final Font font = createMockFont();
@@ -31,14 +29,14 @@ class ResultListWidgetTest {
 
     @Test
     void render_paintsDarkBackground() {
-        widget.render(gui, 10, 20, 200, 300, results, -1, 0);
+        widget.render(gui, 10, 20, 200, 300, results, -1, 0, 0, 0);
 
         verify(gui).fill(10, 20, 210, 320, DARK_BG);
     }
 
     @Test
     void render_drawsResultNameAndSourceMod() {
-        widget.render(gui, 10, 20, 200, 300, results, -1, 0);
+        widget.render(gui, 10, 20, 200, 300, results, -1, 0, 0, 0);
 
         // Verify basic presence of each text
         verify(gui, atLeastOnce()).drawString(any(), eq("娜迦鳞片"), anyInt(), anyInt(), anyInt(), anyBoolean());
@@ -50,7 +48,7 @@ class ResultListWidgetTest {
 
     @Test
     void render_highlightsSelectedRow() {
-        widget.render(gui, 10, 20, 200, 300, results, 0, 0);
+        widget.render(gui, 10, 20, 200, 300, results, 0, 0, 0, 0);
 
         // Selected row 0: highlight border at contentX=11, rowY=21, contentWidth=192, ROW_HEIGHT=20
         verify(gui).hLine(11, 202, 21, HIGHLIGHT_BORDER);       // top
@@ -61,7 +59,7 @@ class ResultListWidgetTest {
 
     @Test
     void render_scrollOffsetAffectsPosition() {
-        widget.render(gui, 10, 20, 200, 300, results, 2, 1);
+        widget.render(gui, 10, 20, 200, 300, results, 2, 1, 0, 0);
 
         // Row 2 (index 2) at visual row: (2-1)*20 = 20 -> rowY = 21+20 = 41, textY = 41+10 = 51
         verify(gui, atLeastOnce()).drawString(any(), eq("烧焦的树皮"), anyInt(), anyInt(), anyInt(), anyBoolean());
@@ -70,7 +68,7 @@ class ResultListWidgetTest {
     @Test
     void render_emptyList_doesNotThrow() {
         assertDoesNotThrow(() ->
-            widget.render(gui, 10, 20, 200, 300, List.of(), -1, 0)
+            widget.render(gui, 10, 20, 200, 300, List.of(), -1, 0, 0, 0)
         );
     }
 
@@ -93,7 +91,7 @@ class ResultListWidgetTest {
 
     @Test
     void render_enablesScissor() {
-        widget.render(gui, 10, 20, 200, 300, results, -1, 0);
+        widget.render(gui, 10, 20, 200, 300, results, -1, 0, 0, 0);
 
         int contentX = 11;
         int contentY = 21;

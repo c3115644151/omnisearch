@@ -18,6 +18,9 @@ import java.util.HexFormat;
 import java.util.List;
 
 public class CacheLayer {
+    // Cache schema version — increment when parser/layout changes to invalidate old caches
+    static final int CACHE_VERSION = 3;
+
     // TTL configuration (milliseconds)
     private static final long SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000L;   // 7 days
     private static final long PAGE_TTL_MS = 30 * 24 * 60 * 60 * 1000L;    // 30 days
@@ -83,7 +86,6 @@ public class CacheLayer {
 
     // === Internal methods ===
 
-    @SuppressWarnings("unchecked")
     private @Nullable <T> T getEntry(Path path, long ttlMs, Type dataType) {
         if (!Files.exists(path)) return null;
         try {
@@ -124,19 +126,19 @@ public class CacheLayer {
     }
 
     private Path searchPath(SearchQuery query) {
-        return cacheDir.resolve("search").resolve(md5(query.text()) + ".json");
+        return cacheDir.resolve("search").resolve("v" + CACHE_VERSION + "_" + md5(query.text()) + ".json");
     }
 
     private Path staleSearchPath(SearchQuery query) {
-        return cacheDir.resolve("stale").resolve("search").resolve(md5(query.text()) + ".json");
+        return cacheDir.resolve("stale").resolve("search").resolve("v" + CACHE_VERSION + "_" + md5(query.text()) + ".json");
     }
 
     private Path pagePath(String pageId) {
-        return cacheDir.resolve("page").resolve(pageId.replace("/", "_") + ".json");
+        return cacheDir.resolve("page").resolve("v" + CACHE_VERSION + "_" + pageId.replace("/", "_") + ".json");
     }
 
     private Path stalePagePath(String pageId) {
-        return cacheDir.resolve("stale").resolve("page").resolve(pageId.replace("/", "_") + ".json");
+        return cacheDir.resolve("stale").resolve("page").resolve("v" + CACHE_VERSION + "_" + pageId.replace("/", "_") + ".json");
     }
 
     private static String md5(String input) {
