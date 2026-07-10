@@ -108,4 +108,4 @@ Omnisearch是一个已发布的Minecraft mod，当前状态：
 | `07_multiversion.md` | 多版本构建策略（Stonecutter） |
 | `08_verified_tech.md` | 已验证技术主张清单（附验证来源） |
 | `09_open_questions.md` | 待验证/待确认问题 |
-| `10_dev_phases.md` | 开发阶段规划 |
+| `10_tab_floating_window_refactor.md` | TAB入口从全屏UI迁移为右侧悬浮窗的专项重构设计 |
