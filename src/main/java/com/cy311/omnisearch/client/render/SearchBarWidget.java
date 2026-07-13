@@ -91,4 +91,8 @@ public class SearchBarWidget {
     public EditBox getEditBox() {
         return editBox;
     }
+
+    public int getTotalHeight() {
+        return editBox.getHeight() + (PANEL_PADDING + BORDER_WIDTH) * 2;
+    }
 }
