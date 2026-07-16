@@ -9,21 +9,26 @@ import net.minecraft.client.gui.GuiGraphics;
  */
 public final class FloatingSearchWindow {
 
-    private static final int OUTER_MARGIN = 16;
-    private static final int TOP_MARGIN = 20;
-    private static final int MIN_WIDTH = 420;
-    private static final int MAX_WIDTH = 520;
-    private static final int MIN_HEIGHT = 220;
-    private static final int STATUS_HEIGHT = 24;
-    private static final int SECTION_GAP = 8;
+    private static final float WIDTH_RATIO = 0.40f;
+    private static final int MIN_WIDTH = 200;
+    private static final int MAX_WIDTH = 400;
+    private static final float HEIGHT_RATIO = 0.80f;
+    private static final int MIN_HEIGHT = 200;
+    private static final int MAX_HEIGHT = 560;
 
     public record Bounds(int x, int y, int width, int height) {}
 
     public Bounds computeBounds(int screenWidth, int screenHeight) {
-        int panelWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(screenWidth * 0.34f)));
-        int panelHeight = Math.max(MIN_HEIGHT, screenHeight - TOP_MARGIN * 2);
-        int x = screenWidth - panelWidth - OUTER_MARGIN;
-        int y = TOP_MARGIN;
+        int panelWidth = Math.round(screenWidth * WIDTH_RATIO);
+        panelWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, panelWidth));
+        panelWidth = Math.min(panelWidth, Math.max(MIN_WIDTH, screenWidth - OmniTheme.SIDE_MARGIN * 2));
+
+        int panelHeight = Math.round(screenHeight * HEIGHT_RATIO);
+        panelHeight = Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, panelHeight));
+        panelHeight = Math.min(panelHeight, Math.max(MIN_HEIGHT, screenHeight - OmniTheme.SIDE_MARGIN * 2));
+
+        int x = screenWidth - panelWidth - OmniTheme.SIDE_MARGIN;
+        int y = Math.max(OmniTheme.SIDE_MARGIN, (screenHeight - panelHeight) / 2);
         return new Bounds(x, y, panelWidth, panelHeight);
     }
 
@@ -33,19 +38,15 @@ public final class FloatingSearchWindow {
         int width = bounds.width();
         int height = bounds.height();
 
-        gui.fill(0, 0, screenWidth, screenHeight, 0x22000000);
-        gui.fill(x, y, x + width, y + height, OmniTheme.BG_DARK);
-        gui.fill(x, y, x + width, y + height, 0xAA101010);
-
+        // Very light dim
+        gui.fill(0, 0, screenWidth, screenHeight, 0x10000000);
+        // Window background
+        gui.fill(x, y, x + width, y + height, 0xDD0A0A0A);
+        // Single border
         gui.hLine(x, x + width - 1, y, OmniTheme.BORDER_LIGHT);
         gui.vLine(x, y, y + height - 1, OmniTheme.BORDER_LIGHT);
         gui.hLine(x, x + width - 1, y + height - 1, OmniTheme.BORDER);
         gui.vLine(x + width - 1, y, y + height - 1, OmniTheme.BORDER);
-
-        gui.hLine(x + 1, x + width - 2, y + 1, OmniTheme.BORDER);
-        gui.vLine(x + 1, y + 1, y + height - 2, OmniTheme.BORDER);
-        gui.hLine(x + 1, x + width - 2, y + height - 2, OmniTheme.BORDER_LIGHT);
-        gui.vLine(x + width - 2, y + 1, y + height - 2, OmniTheme.BORDER_LIGHT);
     }
 
     public int[] getSearchBarBounds(Bounds bounds, int searchBarHeight) {
@@ -57,16 +58,16 @@ public final class FloatingSearchWindow {
 
     public int[] getBodyBounds(Bounds bounds, int searchBarHeight) {
         int x = bounds.x() + OmniTheme.PADDING;
-        int y = bounds.y() + OmniTheme.PADDING + searchBarHeight + SECTION_GAP;
+        int y = bounds.y() + OmniTheme.PADDING + searchBarHeight + OmniTheme.SECTION_GAP;
         int width = bounds.width() - OmniTheme.PADDING * 2;
-        int height = bounds.height() - OmniTheme.PADDING * 2 - searchBarHeight - SECTION_GAP - STATUS_HEIGHT - SECTION_GAP;
+        int height = bounds.height() - OmniTheme.PADDING * 2 - searchBarHeight - OmniTheme.SECTION_GAP - OmniTheme.STATUS_HEIGHT - OmniTheme.SECTION_GAP;
         return new int[]{x, y, width, Math.max(1, height)};
     }
 
     public int[] getStatusBounds(Bounds bounds) {
         int x = bounds.x() + OmniTheme.PADDING;
         int width = bounds.width() - OmniTheme.PADDING * 2;
-        int y = bounds.y() + bounds.height() - OmniTheme.PADDING - STATUS_HEIGHT;
-        return new int[]{x, y, width, STATUS_HEIGHT};
+        int y = bounds.y() + bounds.height() - OmniTheme.PADDING - OmniTheme.STATUS_HEIGHT;
+        return new int[]{x, y, width, OmniTheme.STATUS_HEIGHT};
     }
 }

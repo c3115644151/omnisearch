@@ -13,8 +13,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.io.FileWriter;
-import java.io.PrintWriter;
 
 /**
  * Parses mcmod.cn HTML pages into structured data.model objects.
@@ -25,8 +23,34 @@ public class McmodParser {
 
     private static final Pattern HREF_ITEM_PATTERN = Pattern.compile("/(item|class)/(\\d+)");
     private static final Pattern LINK_TEXT_PATTERN = Pattern.compile("^(.*?)\\s*-\\s*(.*)$");
+    private static final Pattern CATEGORY_PATTERN = Pattern.compile("^\\(([^)]+)\\)\\s*(.*)$");
     private static final Pattern PAREN_ENGLISH = Pattern.compile("\\s*\\([^)]*\\)");
     private static final Pattern COLOR_PATTERN = Pattern.compile("color\\s*:\\s*(#[0-9a-fA-F]{3,8})\\b");
+
+    /**
+     * Normalizes a URL by adding https: protocol to protocol-relative URLs.
+     */
+    private static String normalizeUrl(String url) {
+        if (url == null || url.isBlank()) return url;
+        if (url.startsWith("//")) return "https:" + url;
+        return url;
+    }
+
+    /**
+     * Extracts and normalizes image URL from element, handling data-src for lazy-loaded images.
+     */
+    private static String extractImageUrl(Element img) {
+        // Try data-src first (for lazy-loaded images), using absUrl to resolve protocol-relative URLs
+        String url = img.absUrl("data-src");
+        if (url.isBlank()) url = img.attr("data-src");
+        if (url.isBlank()) {
+            url = img.absUrl("src");
+        }
+        if (url.isBlank()) {
+            url = img.attr("src");
+        }
+        return normalizeUrl(url);
+    }
 
     // ──────────────────────────────────────────────
     // Search Results
@@ -64,6 +88,18 @@ public class McmodParser {
             String type = m.group(1);   // "item" or "class"
             String id = type + "/" + m.group(2);
 
+            // Category tag is a text node in the parent .head div, before the <a> tag.
+            // e.g. "(自然生成) <a>巫妖塔 - 暮色森林</a>"
+            String category = null;
+            Element headDiv = link.parent();
+            if (headDiv != null) {
+                String headText = headDiv.text();
+                Matcher catMatcher = CATEGORY_PATTERN.matcher(headText);
+                if (catMatcher.matches()) {
+                    category = catMatcher.group(1).trim();
+                }
+            }
+
             String linkText = link.text().trim();
             String name = linkText;
             String sourceMod = null;
@@ -80,7 +116,7 @@ public class McmodParser {
                 sourceMod = PAREN_ENGLISH.matcher(sourceMod).replaceAll("").trim();
             }
 
-            results.add(new SearchHit(id, name, type, sourceMod));
+            results.add(new SearchHit(id, name, type, sourceMod, category));
         }
 
         return results;
@@ -106,12 +142,6 @@ public class McmodParser {
         String itemId = "";
         java.util.regex.Matcher idMatcher = java.util.regex.Pattern.compile("/item/(\\d+)").matcher(url);
         if (idMatcher.find()) itemId = idMatcher.group(1);
-
-        String debugMsg = "[McmodParser] parseItemPage called url=" + url + " htmlLen=" + html.length()
-            + " hasCaptcha=" + html.contains("安全验证");
-        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-            pw.println(System.currentTimeMillis() + " " + debugMsg);
-        } catch (Exception ignored) {}
 
         org.jsoup.nodes.Document doc = Jsoup.parse(html, url);
 
@@ -151,10 +181,8 @@ public class McmodParser {
             "a[href*='/item/" + itemId + "'] img"
         );
         for (Element img : iconImgCandidates) {
-            String src = img.absUrl("src");
-            if (src.isEmpty()) src = img.attr("src");
-            if (src.startsWith("//")) src = "https:" + src;
-            if (!src.isEmpty() && !src.contains("avatar") && !src.contains("data:")) {
+            String src = extractImageUrl(img);
+            if (!src.isBlank() && !src.contains("avatar") && !src.contains("data:")) {
                 iconUrl = src;
                 iconAlt = img.attr("alt");
                 break;
@@ -163,10 +191,8 @@ public class McmodParser {
         if (iconUrl == null) {
             Elements allImgs = doc.select("img");
             for (Element img : allImgs) {
-                String src = img.absUrl("src");
-                if (src.isEmpty()) src = img.attr("src");
+                String src = extractImageUrl(img);
                 if (src.contains("/item/icon/") || src.contains("/item_icon/")) {
-                    if (src.startsWith("//")) src = "https:" + src;
                     iconUrl = src;
                     iconAlt = img.attr("alt");
                     break;
@@ -190,17 +216,6 @@ public class McmodParser {
                 content.addAll(parsed);
             }
         }
-
-        // Debug log
-        int imgCount = (int) content.stream().filter(n -> n instanceof com.cy311.omnisearch.data.model.document.ImageNode).count();
-        int inlineImgCount = (int) content.stream().filter(n -> n instanceof com.cy311.omnisearch.data.model.document.ImageInlineNode).count();
-        String imgDebugMsg = "[McmodParser] item page: " + content.size() + " nodes, "
-            + imgCount + " ImageNode, "
-            + inlineImgCount + " ImageInlineNode src=" + url
-            + " icon=" + (iconUrl != null ? iconUrl.substring(Math.max(0, iconUrl.length()-40)) : "none");
-        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-            pw.println(System.currentTimeMillis() + " " + imgDebugMsg);
-        } catch (Exception ignored) {}
 
         if (content.isEmpty()) {
             content.add(new TextNode("(empty content)"));
@@ -307,35 +322,47 @@ public class McmodParser {
                 yield java.util.List.of(new ParagraphNode(children));
             }
             case "table" -> {
-                TableNode table = parseTable(el);
-                yield table != null ? java.util.List.of(table) : Collections.emptyList();
+                // Check if this table contains only images (gallery table)
+                Elements imgs = el.select("img");
+                Elements textCells = el.select("td, th");
+                boolean isGallery = !imgs.isEmpty() && textCells.stream().allMatch(cell -> {
+                    String text = cell.text().trim();
+                    return text.isEmpty() || cell.select("img").size() > 0;
+                });
+                
+                if (isGallery) {
+                    // Extract images as block-level ImageNodes
+                    List<DocNode> imgNodes = new ArrayList<>();
+                    for (Element img : imgs) {
+                        String src = extractImageUrl(img);
+                        String alt = img.attr("alt");
+                        if (!src.isBlank()) {
+                            int[] imgDims = parseImgDims(img);
+                            imgNodes.add(new ImageNode(src, alt, null, imgDims[0], imgDims[1]));
+                        }
+                    }
+                    yield imgNodes;
+                } else {
+                    // Regular table
+                    TableNode table = parseTable(el);
+                    yield table != null ? java.util.List.of(table) : Collections.emptyList();
+                }
             }
             case "ul" -> java.util.List.of(new ListNode(false, parseListItems(el)));
             case "ol" -> java.util.List.of(new ListNode(true, parseListItems(el)));
             case "hr" -> java.util.List.of(new DividerNode());
             case "img" -> {
-                String src = el.absUrl("src");
-                if (src.isEmpty()) src = el.attr("src");
-                // data-src fallback for lazy-loaded images
-                if (src.isEmpty() || src.endsWith(".svg") || src.contains("placeholder")) {
-                    String dataSrc = el.attr("data-src");
-                    if (!dataSrc.isEmpty()) src = el.absUrl("data-src");
-                    if (src.isEmpty()) src = dataSrc;
-                }
+                String src = extractImageUrl(el);
                 String alt = el.attr("alt");
                 if (src.isBlank()) yield Collections.emptyList();
-                // Check for CSS background-image as fallback
-                String bgSrc = extractBackgroundImage(el);
-                if (bgSrc != null) {
-                    yield java.util.List.of(new ImageInlineNode(bgSrc, alt));
-                }
-                yield java.util.List.of(new ImageNode(src, alt, null));
+                int[] imgDims = parseImgDims(el);
+                yield java.util.List.of(new ImageNode(src, alt, null, imgDims[0], imgDims[1]));
             }
             case "div" -> {
                 List<DocNode> sectionResult = tryParseSection(el);
                 yield sectionResult;
             }
-            case "br" -> Collections.emptyList();
+            case "br" -> List.of(new TextNode("\n"));
             case "svg" -> parseInlineSvg(el);
             case "use" -> {
                 String href = el.attr("xlink:href");
@@ -351,6 +378,29 @@ public class McmodParser {
                     String alt = el.attr("alt");
                     if (alt.isBlank()) alt = el.text();
                     yield java.util.List.of(new ImageInlineNode(bgSrc, alt));
+                }
+                // Check for nested img tags (e.g. <a><img></a>, <figure><img></figure>, <span><img></span>)
+                Elements nestedImgs = el.select("img");
+                if (!nestedImgs.isEmpty()) {
+                    List<DocNode> imgNodes = new ArrayList<>();
+                    for (Element img : nestedImgs) {
+                        String src = extractImageUrl(img);
+                        String alt = img.attr("alt");
+                        if (!src.isBlank()) {
+                            int[] imgDims = parseImgDims(img);
+                            imgNodes.add(new ImageNode(src, alt, null, imgDims[0], imgDims[1]));
+                        }
+                    }
+                    if (!imgNodes.isEmpty()) yield imgNodes;
+                }
+                // Check for nested svg with <use> tags
+                Elements nestedSvgs = el.select("svg");
+                if (!nestedSvgs.isEmpty()) {
+                    List<DocNode> svgNodes = new ArrayList<>();
+                    for (Element svg : nestedSvgs) {
+                        svgNodes.addAll(parseInlineSvg(svg));
+                    }
+                    if (!svgNodes.isEmpty()) yield svgNodes;
                 }
                 // Fallback: render element text (NOT children — block elements
                 // are handled by parseBlockNode)
@@ -430,19 +480,17 @@ public class McmodParser {
                 yield java.util.List.of(new LinkNode(href, linkChildren));
             }
             case "img" -> {
-                String src = el.absUrl("src");
-                if (src.isEmpty()) src = el.attr("src");
-                // data-src fallback for lazy-loaded images
-                if (src.isEmpty() || src.endsWith(".svg") || src.contains("placeholder")) {
-                    String dataSrc = el.attr("data-src");
-                    if (!dataSrc.isEmpty()) src = el.absUrl("data-src");
-                    if (src.isEmpty()) src = dataSrc;
-                }
+                String src = extractImageUrl(el);
                 String alt = el.attr("alt");
                 if (src.isBlank()) yield Collections.emptyList();
+                // Check if this is a content image (has width/height attrs) -> block-level ImageNode
+                if (isContentImage(el)) {
+                    int[] imgDims = parseImgDims(el);
+                    yield java.util.List.of(new ImageNode(src, alt, null, imgDims[0], imgDims[1]));
+                }
                 yield java.util.List.of(new ImageInlineNode(src, alt));
             }
-            case "br" -> Collections.emptyList();
+            case "br" -> List.of(new TextNode("\n"));
             case "svg" -> parseInlineSvg(el);
             case "use" -> {
                 String href = el.attr("xlink:href");
@@ -477,18 +525,31 @@ public class McmodParser {
             return null;
         }
 
-        // First row as headers
+        // First row as headers only if it has <th> elements OR its cells have text content
+        // (mcmod.cn attribute tables use <td> for headers)
+        // But if cells only contain images (no text), treat as data row
         Element headerRow = rows.first();
+        boolean hasTh = !headerRow.select("th").isEmpty();
+        boolean hasHeaderText = !headerRow.text().trim().isEmpty();
         List<String> headers = new ArrayList<>();
-        for (Element th : headerRow.select("th, td")) {
-            headers.add(th.text().trim());
+        int startRow = 0;
+        if (hasTh || hasHeaderText) {
+            startRow = 1;
+            for (Element th : headerRow.select("th, td")) {
+                headers.add(th.text().trim());
+            }
         }
 
-        // Remaining rows as data
+        // Data rows
         List<List<DocNode>> dataRows = new ArrayList<>();
-        for (int i = 1; i < rows.size(); i++) {
+        for (int i = startRow; i < rows.size(); i++) {
             List<DocNode> rowCells = new ArrayList<>();
-            for (Element cell : rows.get(i).select("th, td")) {
+            Elements cells = rows.get(i).select("> th, > td");
+            if (cells.isEmpty()) {
+                // Row has no th/td directly - try any th/td (nested tables)
+                cells = rows.get(i).select("th, td");
+            }
+            for (Element cell : cells) {
                 List<DocNode> cellContent = parseInlineChildren(cell);
                 if (cellContent.isEmpty()) {
                     cellContent = java.util.List.of(new TextNode(cell.text().trim()));
@@ -540,8 +601,16 @@ public class McmodParser {
             sectionTitle = classAttr.replaceAll("[-_]", " ");
         }
 
-        // Process children as block content
+        // Check for CSS background-image on the div itself (e.g. icon sprite divs)
         List<DocNode> children = new ArrayList<>();
+        String bgSrc = extractBackgroundImage(divEl);
+        if (bgSrc != null) {
+            String alt = divEl.attr("alt");
+            if (alt.isBlank()) alt = divEl.text();
+            children.add(new ImageInlineNode(bgSrc, alt));
+        }
+
+        // Process children as block content
         for (Node child : divEl.childNodesCopy()) {
             // childNodesCopy() creates new Node instances, so we compare by tag + text,
             // not by reference equality, to skip the heading already used as section title.
@@ -612,6 +681,71 @@ public class McmodParser {
             return m.group(1);
         }
         return null;
+    }
+
+    /**
+     * Parses img dimensions from width/height or data-width/data-height attributes.
+     * Returns [width, height], or [0, 0] if unknown.
+     */
+    private static int[] parseImgDims(Element el) {
+        int w = parseDimAttr(el, "width", "data-width");
+        int h = parseDimAttr(el, "height", "data-height");
+        return new int[]{w, h};
+    }
+
+    private static int parseDimAttr(Element el, String attr, String dataAttr) {
+        String v = el.attr(attr);
+        if (v.isEmpty()) v = el.attr(dataAttr);
+        if (v.isEmpty()) return 0;
+        try {
+            return Integer.parseInt(v.replaceAll("[^0-9]", ""));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * Checks if a src URL is a placeholder/loading image that should fall back to data-src.
+     */
+    private static boolean isPlaceholderSrc(String src) {
+        if (src == null || src.isEmpty()) return true;
+        return src.endsWith(".svg")
+            || src.contains("placeholder")
+            || src.contains("loading")
+            || src.contains("loadfail")
+            || src.contains("loading-colourful");
+    }
+
+    /**
+     * Checks if an img element is a content image (not an icon) based on width/height attributes.
+     * Content images get block-level layout; icons get inline layout.
+     */
+    private static boolean isContentImage(Element el) {
+        String w = el.attr("width");
+        String h = el.attr("height");
+        if (!w.isEmpty()) {
+            try {
+                int wi = Integer.parseInt(w.replaceAll("[^0-9]", ""));
+                if (wi >= 50) return true;
+            } catch (NumberFormatException ignored) {}
+        }
+        if (!h.isEmpty()) {
+            try {
+                int hi = Integer.parseInt(h.replaceAll("[^0-9]", ""));
+                if (hi >= 50) return true;
+            } catch (NumberFormatException ignored) {}
+        }
+        // Check data-width/data-height (mcmod.cn lazy-load attrs)
+        String dw = el.attr("data-width");
+        if (!dw.isEmpty()) {
+            try {
+                int dwi = Integer.parseInt(dw.replaceAll("[^0-9]", ""));
+                if (dwi >= 50) return true;
+            } catch (NumberFormatException ignored) {}
+        }
+        // If img has data-src (lazy-loaded), it's a content image, not an icon
+        if (!el.attr("data-src").isEmpty()) return true;
+        return false;
     }
 
     /**

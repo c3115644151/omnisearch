@@ -291,8 +291,6 @@ class McmodParserContentTest {
             </span></p>""");
 
         assertFalse(content.isEmpty(), "should have content");
-        // Log first node type for debugging
-        System.out.println("  first content node: " + content.getFirst().getClass().getSimpleName());
         assertInstanceOf(ParagraphNode.class, content.get(0), "first node should be paragraph");
 
         ParagraphNode para = (ParagraphNode) content.get(0);
@@ -301,5 +299,103 @@ class McmodParserContentTest {
                 && ((ImageInlineNode) n).getUrl().startsWith("mc-icon://"))
             .count();
         assertEquals(3, mcIconCount, "Should parse all 3 SVG icons");
+    }
+
+    @Test
+    void lazyLoadImage_inTableCell_parsedAsImageNode_variantA_browserRenderedHtml() {
+        // Variant A: browser JS has already replaced src with the real WebP URL.
+        // This is what you see when inspecting the DOM in a browser.
+        List<DocNode> content = parseContent("""
+            <div class="table-scroll"><table class="table table-bordered text-nowrap"><tbody>
+              <tr>
+                <td style="word-break: break-all;"><span class="figure"><img alt="暗夜巫妖-第1张图片" class="lazy" src="https://i.mcmod.cn/editor/upload/20240424/1713897356_557759_yZAd.webp" data-src="https://i.mcmod.cn/editor/upload/20240424/1713897356_557759_yZAd.webp" data-error="//www.mcmod.cn/images/loadfail.gif" data-width="475" data-height="250" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif" width="475" height="250"></span></td>
+                <td><span class="figure"><img alt="暗夜巫妖-第2张图片" class="lazy" src="https://i.mcmod.cn/editor/upload/20240424/1713897813_557759_xuvp.webp" data-src="https://i.mcmod.cn/editor/upload/20240424/1713897813_557759_xuvp.webp" data-error="//www.mcmod.cn/images/loadfail.gif" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif"></span></td>
+              </tr>
+            </tbody></table></div>
+            """);
+
+        long imageCount = countImagesRecursive(content);
+        assertTrue(imageCount >= 2, "Variant A: Should find at least 2 ImageNodes with real WebP URL, found: " + imageCount
+            + " content types: " + content.stream().map(n -> n.getClass().getSimpleName()).toList());
+    }
+
+    @Test
+    void lazyLoadImage_inTableCell_parsedAsImageNode_variantB_serverOriginalHtml() {
+        // Variant B: server-returned original HTML where src is the loading gif,
+        // and the real WebP URL is in data-src. This is what the HTTP client receives.
+        List<DocNode> content = parseContent("""
+            <div class="table-scroll"><table class="table table-bordered text-nowrap"><tbody>
+              <tr>
+                <td style="word-break: break-all;"><span class="figure"><img alt="暗夜巫妖-第1张图片" class="lazy" src="https://www.mcmod.cn/static/public/images/loading-colourful.gif" data-src="https://i.mcmod.cn/editor/upload/20240424/1713897356_557759_yZAd.webp" data-error="//www.mcmod.cn/images/loadfail.gif" data-width="475" data-height="250" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif" width="475" height="250"></span></td>
+                <td><span class="figure"><img alt="暗夜巫妖-第2张图片" class="lazy" src="https://www.mcmod.cn/static/public/images/loading-colourful.gif" data-src="https://i.mcmod.cn/editor/upload/20240424/1713897813_557759_xuvp.webp" data-error="//www.mcmod.cn/images/loadfail.gif" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif"></span></td>
+              </tr>
+            </tbody></table></div>
+            """);
+
+        long imageCount = countImagesRecursive(content);
+        assertTrue(imageCount >= 2, "Variant B: Should find at least 2 ImageNodes with real WebP URL, found: " + imageCount
+            + " content types: " + content.stream().map(n -> n.getClass().getSimpleName()).toList());
+    }
+
+    /** Recursively counts ImageNodes with editor/upload URL */
+    private long countImagesRecursive(List<DocNode> nodes) {
+        long count = 0;
+        for (DocNode node : nodes) {
+            if (node instanceof ImageNode im) {
+                System.out.println("  found ImageNode: url=" + im.getUrl() + " w=" + im.getOrigWidth() + " h=" + im.getOrigHeight());
+                if (im.getUrl().contains("editor/upload") && im.getUrl().endsWith(".webp")) {
+                    count++;
+                }
+            } else if (node instanceof SectionNode sn) {
+                count += countImagesRecursive(sn.getChildren());
+            } else if (node instanceof TableNode tn) {
+                for (List<DocNode> row : tn.getRows()) {
+                    count += countImagesRecursive(row);
+                }
+            } else if (node instanceof ParagraphNode pn) {
+                count += countImagesRecursive(pn.getChildren());
+            }
+        }
+        return count;
+    }
+
+    @Test
+    void lazyLoadImage_directInContent_parsedWithRealUrl() {
+        // Simulates a lazy-loaded img directly in content (not in a table)
+        List<DocNode> content = parseContent("""
+            <img alt="巫妖壁垒-第1张图片" class="lazy" src="https://www.mcmod.cn/static/public/images/loading-colourful.gif" data-src="https://i.mcmod.cn/editor/upload/20200408/1586342720_79030_bCjC.webp" data-error="//www.mcmod.cn/images/loadfail.gif" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif">
+            """);
+
+        for (DocNode node : content) {
+            System.out.println("  content node: " + node.getClass().getSimpleName()
+                + (node instanceof ImageNode im ? " url=" + im.getUrl() : ""));
+        }
+
+        assertFalse(content.isEmpty(), "should have content");
+        ImageNode img = (ImageNode) content.stream()
+            .filter(n -> n instanceof ImageNode)
+            .findFirst()
+            .orElse(null);
+        assertNotNull(img, "Should find an ImageNode");
+        assertTrue(img.getUrl().endsWith(".webp"), "URL should be the real WebP from data-src, got: " + img.getUrl());
+        assertFalse(img.getUrl().contains("loading"), "URL should not be the loading placeholder");
+    }
+
+    @Test
+    void lazyLoadImage_inParagraphSpanFigure_parsedWithRealUrl() {
+        // Actual server-side HTML: <p><span class="figure"><img class="lazy" src="loading.gif" data-src="real.webp">
+        List<DocNode> content = parseContent("""
+            <p><span class="figure"><img class="lazy" src="//www.mcmod.cn/static/public/images/loading-colourful.gif" data-src="https://i.mcmod.cn/editor/upload/20260210/1770727137_1264075_piDy.webp" data-error="//www.mcmod.cn/images/loadfail.gif"></span></p>
+            """);
+
+        for (DocNode node : content) {
+            System.out.println("  content node: " + node.getClass().getSimpleName()
+                + (node instanceof ImageNode im ? " url=" + im.getUrl() : ""));
+        }
+
+        assertFalse(content.isEmpty(), "should have content");
+        // Search recursively through paragraph children
+        long imgCount = countImagesRecursive(content);
+        assertTrue(imgCount > 0, "Should find at least 1 ImageNode with WebP URL, found: " + imgCount);
     }
 }

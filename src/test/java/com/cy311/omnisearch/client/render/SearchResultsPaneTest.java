@@ -17,16 +17,16 @@ class SearchResultsPaneTest {
 
     private final Font font = createMockFont();
     private final GuiGraphics gui = createMockGuiGraphics();
-    private final SearchResultsPane pane = new SearchResultsPane(new ResultListWidget(font));
+    private final SearchResultsPane pane = new SearchResultsPane(new ResultListWidget(font), font);
 
     private SearchSessionState stateWithResults() {
         return SearchSessionState.initial()
             .withCurrentView(SearchSessionState.BodyView.RESULTS)
             .withQuery(new SearchQuery("娜迦"))
             .withResults(List.of(
-                new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林"),
-                new SearchHit("item/2", "月光蠕行者的眼珠", "item", "暮色森林"),
-                new SearchHit("item/3", "烧焦的树皮", "item", "交错维度")
+                new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null),
+                new SearchHit("item/2", "月光蠕行者的眼珠", "item", "暮色森林", null),
+                new SearchHit("item/3", "烧焦的树皮", "item", "交错维度", null)
             ));
     }
 
@@ -51,11 +51,12 @@ class SearchResultsPaneTest {
     }
 
     @Test
-    void handleScroll_updatesOffset() {
+    void handleScroll_clampsToZero() {
+        // 3 results, height=120 -> visibleRows=7 -> maxScroll=0 -> offset clamped to 0
         SearchSessionState state = stateWithResults().withResultsScrollOffset(6);
 
-        SearchSessionState next = pane.handleScroll(state, 1);
+        SearchSessionState next = pane.handleScroll(state, 1, 120);
 
-        assertEquals(3, next.resultsScrollOffset());
+        assertEquals(0, next.resultsScrollOffset());
     }
 }

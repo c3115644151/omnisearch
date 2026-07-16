@@ -1,6 +1,7 @@
 package com.cy311.omnisearch.client.render.layout;
 
 import com.cy311.omnisearch.data.model.document.*;
+import com.cy311.omnisearch.gui.theme.OmniTheme;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -14,19 +15,20 @@ import java.util.List;
  */
 public class LayoutEngine {
 
-    private static final int PARAGRAPH_SPACING = 8;
-    private static final int PARAGRAPH_INDENT = 0;
-    private static final int HEADING_SPACING = 6;
-    private static final int LIST_INDENT = 15;
-    private static final int TABLE_PADDING = 4;
-    private static final int IMAGE_PLACEHOLDER_W = 64;
-    private static final int IMAGE_PLACEHOLDER_H = 48;
-    private static final int DIVIDER_HEIGHT = 10;
+    private static final int DIVIDER_HEIGHT = 6;
 
     private final FontMetrics metrics;
     private int contentX;
     private int currentY;
     private int contentWidth;
+
+    // Spacing values derived from lineHeight - scale with font size and UI scale
+    private final int paragraphSpacing;
+    private final int headingSpacing;
+    private final int imageTopMargin;
+    private final int imageBottomMargin;
+    private final int tablePadding;
+    private final int listIndent;
 
     // Inline layout state
     private int inlineCursorX;
@@ -53,6 +55,13 @@ public class LayoutEngine {
         this.inlineCursorX = x;
         this.inlineBaseY = y;
         this.inlineLineHeight = metrics.lineHeight();
+        int lh = metrics.lineHeight();
+        this.paragraphSpacing = Math.max(2, lh / 3);
+        this.headingSpacing = Math.max(2, lh / 3);
+        this.imageTopMargin = Math.max(2, lh / 2);
+        this.imageBottomMargin = Math.max(2, lh / 2);
+        this.tablePadding = Math.max(1, lh / 4);
+        this.listIndent = Math.max(8, lh * 3 / 2);
     }
 
     /**
@@ -117,38 +126,43 @@ public class LayoutEngine {
     // ── Block-level layout ──
 
     private LayoutNode layoutHeading(HeadingNode node) {
-        String headingText = extractText(node);
         int level = node.getLevel();
         float scale = level == 1 ? 1.5f : level == 2 ? 1.2f : 1.0f;
-        int h = (int) (metrics.lineHeight() * scale) + HEADING_SPACING;
-        LayoutNode ln = new LayoutNode(LayoutType.HEADING, headingText)
-            .at(contentX, currentY, contentWidth, h)
+        int scaledLineHeight = (int) (metrics.lineHeight() * scale);
+
+        LayoutNode heading = new LayoutNode(LayoutType.HEADING)
             .withHeadingLevel(level);
-        currentY += h;
-        return ln;
+        heading.x = contentX;
+        heading.y = currentY;
+        heading.w = contentWidth;
+
+        List<InlineFragment> fragments = collectInlineFragments(node.getChildren(), null);
+        int usedHeight = layoutInlineFragmentsIntoParagraph(heading, fragments, contentX, currentY, contentWidth);
+        heading.h = usedHeight + headingSpacing;
+        currentY += heading.h;
+        return heading;
     }
 
     private List<LayoutNode> layoutSection(SectionNode node) {
         List<LayoutNode> result = new ArrayList<>();
         // Title as heading level 2
         LayoutNode heading = new LayoutNode(LayoutType.HEADING, node.getTitle())
-            .at(contentX, currentY, contentWidth, (int)(metrics.lineHeight() * 1.2f) + HEADING_SPACING)
+            .at(contentX, currentY, contentWidth, (int)(metrics.lineHeight() * 1.2f) + headingSpacing)
             .withHeadingLevel(2);
-        currentY += (int)(metrics.lineHeight() * 1.2f) + HEADING_SPACING;
+        currentY += (int)(metrics.lineHeight() * 1.2f) + headingSpacing;
         result.add(heading);
 
         // Children with indent
         int savedX = contentX;
         int savedW = contentWidth;
-        contentX += 4;
-        contentWidth -= 4;
+        contentX += OmniTheme.PADDING;
+        contentWidth -= OmniTheme.PADDING;
         inlineCursorX = contentX;
         inlineBaseY = currentY;
 
         for (DocNode child : node.getChildren()) {
             for (LayoutNode cn : layoutNode(child)) {
                 result.add(cn);
-                currentY += cn.h;
             }
         }
 
@@ -159,13 +173,24 @@ public class LayoutEngine {
 
     private LayoutNode layoutParagraph(ParagraphNode node) {
         LayoutNode para = new LayoutNode(LayoutType.PARAGRAPH);
-        para.x = contentX + PARAGRAPH_INDENT;
+        para.x = contentX;
         para.y = currentY;
 
-        int paragraphWidth = Math.max(1, contentWidth - PARAGRAPH_INDENT);
-        List<InlineFragment> fragments = collectInlineFragments(node.getChildren(), null);
+        int paragraphWidth = Math.max(1, contentWidth);
+
+        // Extract ImageNode children and layout them as block images
+        List<DocNode> nonImageChildren = new ArrayList<>();
+        for (DocNode child : node.getChildren()) {
+            if (child instanceof ImageNode im) {
+                para.add(layoutImage(im));
+            } else {
+                nonImageChildren.add(child);
+            }
+        }
+
+        List<InlineFragment> fragments = collectInlineFragments(nonImageChildren, null);
         int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x, currentY, paragraphWidth);
-        para.h = usedHeight + PARAGRAPH_SPACING;
+        para.h = usedHeight + paragraphSpacing;
         para.w = paragraphWidth;
         currentY += para.h;
         return para;
@@ -176,46 +201,52 @@ public class LayoutEngine {
     }
 
     private LayoutNode layoutInline(String text, boolean styled, boolean bold, int color) {
-        int maxW = contentX + contentWidth - inlineCursorX;
-        if (maxW <= 0) {
-            inlineBaseY += inlineLineHeight;
-            inlineCursorX = contentX;
-            maxW = contentWidth;
-        }
+        // Wrap bare inline text using the paragraph layout infrastructure so that
+        // overlong text wraps instead of being truncated.
+        LayoutType fragType = styled ? LayoutType.STYLED_TEXT : LayoutType.TEXT;
+        InlineFragment fragment = new InlineFragment(fragType, text, null, null, bold, color, null);
 
-        String displayText = text;
-        int textW = metrics.textWidth(displayText);
-        int advW = textW;
+        LayoutNode para = new LayoutNode(LayoutType.PARAGRAPH);
+        para.x = contentX;
+        para.y = currentY;
+        para.w = contentWidth;
 
-        // Check if we need to wrap (handle first word overflow too)
-        if (inlineCursorX + textW > contentX + contentWidth && (inlineCursorX > contentX || textW > contentWidth)) {
-            inlineBaseY += inlineLineHeight;
-            inlineCursorX = contentX;
-            // Re-check if it fits on new line
-            if (textW > contentWidth) {
-                advW = contentWidth - 2;
-            }
-        }
-
-        LayoutType type = styled ? LayoutType.STYLED_TEXT : LayoutType.TEXT;
-        LayoutNode ln = new LayoutNode(type, displayText);
-        ln.at(inlineCursorX, inlineBaseY, advW, inlineLineHeight);
-        if (bold) ln = ln.withBold(true);
-        if (color != -1) ln = ln.withColor(color);
-        inlineCursorX += advW;
-        return ln;
+        int usedHeight = layoutInlineFragmentsIntoParagraph(para, List.of(fragment), contentX, currentY, contentWidth);
+        para.h = usedHeight + paragraphSpacing;
+        currentY += para.h;
+        return para;
     }
 
+    /**
+     * Smart image sizing: uses lineHeight as the natural unit of measure,
+     * so image dimensions scale proportionally with font size and UI scale.
+     *
+     * Layout structure: [topMargin][image (imgH)][bottomMargin]
+     * node.h = imgH only (no margins) so renderer draws exactly the image area.
+     * Margins are applied via currentY advancement, creating consistent visual gaps.
+     */
     private LayoutNode layoutImage(ImageNode node) {
-        int imgW = IMAGE_PLACEHOLDER_W;
-        int imgH = IMAGE_PLACEHOLDER_H;
-        String alt = node.getAlt();
-        int altH = alt.isEmpty() ? 0 : metrics.lineHeight() + 1;
-        int totalH = Math.max(imgH, alt.isEmpty() ? 0 : imgH + altH) + PARAGRAPH_SPACING;
+        int origW = node.getOrigWidth();
+        int origH = node.getOrigHeight();
+        int maxH = metrics.lineHeight() * 8;
+        int imgW, imgH;
+        if (origW > 0 && origH > 0) {
+            imgW = Math.min(origW, contentWidth);
+            imgH = (int) ((float) imgW / origW * origH);
+            if (imgH > maxH) {
+                imgH = maxH;
+                imgW = Math.min((int) ((float) imgH / origH * origW), contentWidth);
+            }
+        } else {
+            imgH = metrics.lineHeight() * 4;
+            imgW = Math.min(imgH * 3 / 2, contentWidth);
+        }
 
+        // Apply top margin, place image, advance past bottom margin
+        currentY += imageTopMargin;
         LayoutNode ln = new LayoutNode(LayoutType.IMAGE, null, node.getUrl(), null, node.getAlt());
-        ln.at(contentX, currentY, imgW, totalH);
-        currentY += totalH;
+        ln.at(contentX, currentY, imgW, imgH);
+        currentY += imgH + imageBottomMargin;
         return ln;
     }
 
@@ -243,36 +274,70 @@ public class LayoutEngine {
             contentWidth
         );
         para.w = contentWidth;
-        para.h = usedHeight + PARAGRAPH_SPACING;
+        para.h = usedHeight + paragraphSpacing;
         currentY += para.h;
         return para;
-    }
-
-    private LayoutNode layoutInlineLink(LinkNode node) {
-        return layoutLink(node); // Same logic, just different parent handling
     }
 
     private LayoutNode layoutTable(TableNode node) {
         List<String> headers = node.getHeaders();
         List<List<DocNode>> rows = node.getRows();
+        // colCount should be the max cell count across all rows (including headers),
+        // so that colspan rows don't shrink the column count.
         int colCount = Math.max(headers != null ? headers.size() : 0,
-            rows != null && !rows.isEmpty() ? rows.getFirst().size() : 1);
+            rows != null ? rows.stream().mapToInt(List::size).max().orElse(1) : 1);
         if (colCount == 0) colCount = 1;
 
-        int colW = (contentWidth - TABLE_PADDING * (colCount - 1)) / colCount;
-        int rowH = metrics.lineHeight() + TABLE_PADDING * 2;
+        // Calculate content-based column widths
+        int[] maxContentWidths = new int[colCount];
+        if (headers != null) {
+            for (int i = 0; i < headers.size() && i < colCount; i++) {
+                if (headers.size() > 1 || colCount == 1)
+                    maxContentWidths[i] = Math.max(maxContentWidths[i], metrics.textWidth(headers.get(i)));
+            }
+        }
+        if (rows != null) {
+            for (List<DocNode> row : rows) {
+                if (row.size() == 1 && colCount > 1) continue;
+                for (int i = 0; i < row.size() && i < colCount; i++) {
+                    List<DocNode> children = extractCellChildren(row.get(i));
+                    List<InlineFragment> fragments = collectInlineFragments(children, null);
+                    int cellW = 0;
+                    for (InlineFragment f : fragments) {
+                        cellW += f.type == LayoutType.INLINE_IMAGE
+                            ? Math.max(1, metrics.lineHeight() - 1) + 1
+                            : metrics.textWidth(f.text != null ? f.text : "");
+                    }
+                    maxContentWidths[i] = Math.max(maxContentWidths[i], cellW);
+                }
+            }
+        }
+        int availWidth = contentWidth - tablePadding * (colCount - 1);
+        int[] colWidths = new int[colCount];
+        int[] colX = new int[colCount];
+        int totalContent = 0;
+        for (int i = 0; i < colCount; i++) totalContent += Math.max(maxContentWidths[i], 20);
+        colX[0] = contentX;
+        for (int i = 0; i < colCount; i++) {
+            colWidths[i] = Math.max(20, (int) ((float) Math.max(maxContentWidths[i], 20) / totalContent * availWidth));
+            if (i > 0) colX[i] = colX[i - 1] + colWidths[i - 1] + tablePadding;
+        }
 
+        int rowH = metrics.lineHeight() + tablePadding * 2;
         LayoutNode table = new LayoutNode(LayoutType.TABLE);
         table.at(contentX, currentY, contentWidth, 0);
 
-        int headerY = currentY;
         if (headers != null) {
-            for (int i = 0; i < headers.size() && i < colCount; i++) {
-                String h = headers.get(i);
-                LayoutNode cell = new LayoutNode(LayoutType.TEXT, h)
-                    .withIsHeader(true);
-                cell.at(contentX + i * (colW + TABLE_PADDING), headerY, colW, rowH);
+            if (headers.size() == 1 && colCount > 1) {
+                LayoutNode cell = new LayoutNode(LayoutType.TEXT, headers.get(0)).withIsHeader(true);
+                cell.at(contentX, currentY, contentWidth, rowH);
                 table.add(cell);
+            } else {
+                for (int i = 0; i < headers.size() && i < colCount; i++) {
+                    LayoutNode cell = new LayoutNode(LayoutType.TEXT, headers.get(i)).withIsHeader(true);
+                    cell.at(colX[i], currentY, colWidths[i], rowH);
+                    table.add(cell);
+                }
             }
             currentY += rowH;
         }
@@ -280,82 +345,68 @@ public class LayoutEngine {
         if (rows != null) {
             for (List<DocNode> row : rows) {
                 int maxRowH = rowH;
-                LayoutNode[] rowCells = new LayoutNode[Math.min(row.size(), colCount)];
-                for (int i = 0; i < row.size() && i < colCount; i++) {
-                    DocNode cellNode = row.get(i);
-                    List<DocNode> cellChildren = extractCellChildren(cellNode);
-                    List<InlineFragment> fragments = collectInlineFragments(cellChildren, null);
-                    boolean hasIcon = fragments.stream().anyMatch(f -> f.type == LayoutType.INLINE_IMAGE);
-
-                    LayoutNode cell;
-                    if (hasIcon) {
-                        cell = new LayoutNode(LayoutType.PARAGRAPH);
-                        cell.at(contentX + i * (colW + TABLE_PADDING), currentY, colW, rowH);
-                        layoutTableCellContent(cell, fragments);
-                    } else {
-                        String cellText = extractTextFromFragments(fragments);
-                        cell = new LayoutNode(LayoutType.TEXT, cellText);
-                        cell.at(contentX + i * (colW + TABLE_PADDING), currentY, colW, rowH);
+                boolean singleCell = row.size() == 1 && colCount > 1;
+                int cellCount = singleCell ? 1 : Math.min(row.size(), colCount);
+                LayoutNode[] rowCells = new LayoutNode[cellCount];
+                for (int i = 0; i < cellCount; i++) {
+                    List<DocNode> cellChildren = extractCellChildren(row.get(i));
+                    // Extract block-level ImageNodes before collectInlineFragments (which skips them)
+                    List<DocNode> imageNodes = new ArrayList<>();
+                    List<DocNode> nonImageChildren = new ArrayList<>();
+                    for (DocNode child : cellChildren) {
+                        if (child instanceof ImageNode im) {
+                            imageNodes.add(im);
+                        } else {
+                            nonImageChildren.add(child);
+                        }
                     }
-                    maxRowH = Math.max(maxRowH, Math.max(cell.h, rowH));
+                    List<InlineFragment> fragments = collectInlineFragments(nonImageChildren, null);
+                    int cellX = singleCell ? contentX : colX[i];
+                    int cellW = singleCell ? contentWidth : colWidths[i];
+                    LayoutNode cell = new LayoutNode(LayoutType.PARAGRAPH);
+                    cell.at(cellX, currentY, cellW, rowH);
+                    // Layout block images: lineHeight-based constraints, preserve aspect ratio
+                    int imgY = currentY;
+                    int cellMaxH = metrics.lineHeight() * 5;
+                    for (DocNode imgNode : imageNodes) {
+                        if (imgNode instanceof ImageNode im) {
+                            LayoutNode imgLayout = new LayoutNode(LayoutType.IMAGE, null, im.getUrl(), null, im.getAlt());
+                            int oW = im.getOrigWidth(), oH = im.getOrigHeight();
+                            int iW, iH;
+                            if (oW > 0 && oH > 0) {
+                                iW = Math.min(oW, cellW);
+                                iH = (int) ((float) iW / oW * oH);
+                                if (iH > cellMaxH) {
+                                    iH = cellMaxH;
+                                    iW = (int) ((float) iH / oH * oW);
+                                }
+                            } else {
+                                // No HTML dimensions: 3 lines tall, 3:2 aspect ratio
+                                iH = metrics.lineHeight() * 3;
+                                iW = Math.min(iH * 3 / 2, cellW);
+                            }
+                            imgLayout.at(cellX, imgY, iW, iH);
+                            cell.add(imgLayout);
+                            imgY += iH + 2;
+                        }
+                    }
+                    int textStartY = imgY > currentY ? imgY : currentY;
+                    int cellHeight = layoutInlineFragmentsIntoParagraph(cell, fragments, cellX, textStartY, cellW);
+                    cellHeight = Math.max(cellHeight, imgY - currentY + tablePadding * 2);
+                    cell.h = cellHeight + tablePadding * 2;
+                    maxRowH = Math.max(maxRowH, cell.h);
                     rowCells[i] = cell;
                 }
-                // Normalize row heights
                 for (LayoutNode rc : rowCells) {
-                    if (rc != null) {
-                        rc.h = maxRowH;
-                        table.add(rc);
-                    }
+                    if (rc != null) { rc.h = maxRowH; table.add(rc); }
                 }
                 currentY += maxRowH;
             }
         }
 
-        table.h = currentY - table.y + PARAGRAPH_SPACING;
-        currentY += PARAGRAPH_SPACING;
+        table.h = currentY - table.y + paragraphSpacing;
+        currentY += paragraphSpacing;
         return table;
-    }
-
-    /**
-     * Lays out cell content (text and inline images) in a single line,
-     * populating the cell's inlineChildren.
-     */
-    private void layoutTableCellContent(LayoutNode cell, List<InlineFragment> fragments) {
-        int x = cell.x;
-        int y = cell.y + Math.max(0, (cell.h - Math.max(1, metrics.lineHeight())) / 2);
-        int maxH = Math.max(1, metrics.lineHeight());
-        for (InlineFragment fragment : fragments) {
-            if (fragment.type == LayoutType.INLINE_IMAGE) {
-                int iconSize = Math.max(1, metrics.lineHeight() - 1);
-                int advance = iconSize + 1;
-                LayoutNode inline = new LayoutNode(LayoutType.INLINE_IMAGE, null, fragment.imageUrl, fragment.linkUrl, fragment.alt)
-                    .at(x, y, iconSize, iconSize);
-                cell.addInline(inline);
-                x += advance;
-                maxH = Math.max(maxH, iconSize);
-            } else if (fragment.text != null && !fragment.text.isEmpty()) {
-                int textW = metrics.textWidth(fragment.text);
-                LayoutNode inline = new LayoutNode(
-                    fragment.type == LayoutType.STYLED_TEXT ? LayoutType.STYLED_TEXT : LayoutType.INLINE_TEXT,
-                    fragment.text, null, fragment.linkUrl, null)
-                    .at(x, y, textW, Math.max(1, metrics.lineHeight()));
-                if (fragment.bold) inline.withBold(true);
-                if (fragment.color != -1) inline.withColor(fragment.color);
-                cell.addInline(inline);
-                x += textW;
-            }
-        }
-        cell.w = Math.max(cell.w, x - cell.x);
-        cell.h = Math.max(cell.h, maxH);
-    }
-
-    /** Concatenates text from inline fragments for pure-text layout. */
-    private static String extractTextFromFragments(List<InlineFragment> fragments) {
-        StringBuilder sb = new StringBuilder();
-        for (InlineFragment f : fragments) {
-            if (f.text != null) sb.append(f.text);
-        }
-        return sb.toString().trim();
     }
 
     /** Extracts children from a cell DocNode for layout. */
@@ -375,38 +426,44 @@ public class LayoutEngine {
             for (int i = 0; i < items.size(); i++) {
                 DocNode item = items.get(i);
 
-                // Bullet marker
+                // Bullet marker (rendered on the first line of the item)
                 String marker = node.isOrdered() ? (i + 1) + ". " : "• ";
-                LayoutNode markerNode = new LayoutNode(LayoutType.TEXT, marker);
-                markerNode.at(contentX, currentY, metrics.textWidth(marker), metrics.lineHeight());
-
-                // Item text
-                int textX = contentX + LIST_INDENT;
-                inlineCursorX = textX;
-                inlineBaseY = currentY;
-                inlineLineHeight = metrics.lineHeight();
-
-                String itemText = extractText(item);
-                LayoutNode textNode = new LayoutNode(LayoutType.TEXT, itemText);
-                int textW = Math.min(metrics.textWidth(itemText), contentWidth - LIST_INDENT);
-                textNode.at(textX, currentY, textW, metrics.lineHeight());
-
-                int itemH = metrics.lineHeight() + 2;
+                int markerW = metrics.textWidth(marker);
+                LayoutNode markerNode = new LayoutNode(LayoutType.TEXT, marker)
+                    .at(contentX, currentY, markerW, metrics.lineHeight());
                 listBox.add(markerNode);
-                listBox.add(textNode);
-                currentY += itemH;
+
+                // Item text laid out as a wrapping paragraph with indent
+                int itemX = contentX + listIndent;
+                int itemWidth = Math.max(1, contentWidth - listIndent);
+                LayoutNode itemPara = new LayoutNode(LayoutType.PARAGRAPH);
+                itemPara.x = itemX;
+                itemPara.y = currentY;
+                itemPara.w = itemWidth;
+
+                List<DocNode> itemChildren;
+                if (item instanceof ParagraphNode pn) {
+                    itemChildren = pn.getChildren();
+                } else {
+                    itemChildren = List.of(item);
+                }
+                List<InlineFragment> fragments = collectInlineFragments(itemChildren, null);
+                int usedHeight = layoutInlineFragmentsIntoParagraph(itemPara, fragments, itemX, currentY, itemWidth);
+                itemPara.h = Math.max(metrics.lineHeight(), usedHeight) + 2;
+                listBox.add(itemPara);
+                currentY += itemPara.h;
             }
         }
 
-        listBox.h = currentY - listBox.y + PARAGRAPH_SPACING;
-        currentY += PARAGRAPH_SPACING;
+        listBox.h = currentY - listBox.y + paragraphSpacing;
+        currentY += paragraphSpacing;
         return listBox;
     }
 
     private LayoutNode layoutDivider() {
         LayoutNode dn = new LayoutNode(LayoutType.DIVIDER);
         dn.at(contentX, currentY, contentWidth, DIVIDER_HEIGHT);
-        currentY += DIVIDER_HEIGHT + PARAGRAPH_SPACING;
+        currentY += DIVIDER_HEIGHT + paragraphSpacing;
         return dn;
     }
 
@@ -461,6 +518,25 @@ public class LayoutEngine {
 
             String remaining = fragment.text != null ? fragment.text : "";
             while (!remaining.isEmpty()) {
+                // Handle explicit line breaks (\n from <br> tags)
+                int nlIdx = remaining.indexOf('\n');
+                if (nlIdx >= 0) {
+                    // Flush text before \n as a segment
+                    if (nlIdx > 0) {
+                        String before = remaining.substring(0, nlIdx);
+                        int segWidth = metrics.textWidth(before);
+                        line.add(new PendingInline(fragmentWithText(fragment, before), segWidth, Math.max(1, metrics.lineHeight()), segWidth));
+                        lineX += segWidth;
+                        lineHeight = Math.max(lineHeight, Math.max(1, metrics.lineHeight()));
+                    }
+                    // Force line break
+                    lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                    lineX = startX;
+                    lineHeight = Math.max(1, metrics.lineHeight());
+                    remaining = remaining.substring(nlIdx + 1);
+                    continue;
+                }
+
                 int available = (startX + maxWidth) - lineX;
                 if (available <= 0 && !line.isEmpty()) {
                     lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
@@ -570,7 +646,31 @@ public class LayoutEngine {
                 high = mid - 1;
             }
         }
+        // Punctuation hanging: if the next char after the break is a closing punctuation
+        // (period, comma, etc.), pull it onto the current line even if it slightly overflows.
+        // This prevents orphaned punctuation at the start of a line.
+        if (best > 0 && best < text.length() && isClosingPunctuation(text.charAt(best))) {
+            best++;
+        }
         return best;
+    }
+
+    /**
+     * Checks if a character is closing punctuation that should not start a line.
+     * Includes CJK and common ASCII punctuation.
+     */
+    private static boolean isClosingPunctuation(char c) {
+        return c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':'
+            || c == ')' || c == ']' || c == '}'
+            || c == '\u3002'  // 。
+            || c == '\uFF0C'  // ，
+            || c == '\uFF01'  // ！
+            || c == '\uFF1F'  // ？
+            || c == '\uFF1B'  // ；
+            || c == '\uFF1A'  // ：
+            || c == '\uFF09'  // ）
+            || c == '\u3011'  // 】
+            || c == '\u300B'; // 』
     }
 
     private static int resolveTextColor(@Nullable TextStyle style) {

@@ -77,7 +77,9 @@ configurations {
 dependencies {
     implementation("org.jetbrains:annotations:26.0.2")
     implementation("org.jsoup:jsoup:1.19.1")
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
     add("additionalRuntimeClasspath", "org.jsoup:jsoup:1.19.1")
+    add("additionalRuntimeClasspath", "org.sejda.imageio:webp-imageio:0.1.6")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

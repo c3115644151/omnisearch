@@ -46,8 +46,8 @@ class CacheLayerTest {
     void searchCache_putGet_returnsSameData() {
         var query = new SearchQuery("test search");
         var results = List.of(
-            new SearchHit("id1", "result1", "mod", "source"),
-            new SearchHit("id2", "result2", "item", "source")
+            new SearchHit("id1", "result1", "mod", "source", null),
+            new SearchHit("id2", "result2", "item", "source", null)
         );
 
         cache.putSearchResults(query, results);
@@ -64,7 +64,7 @@ class CacheLayerTest {
         // Write a CacheEntry with an old timestamp directly
         Path cacheFile = tempDir.resolve("search").resolve(md5("test search") + ".json");
         var oldEntry = new CacheEntry<List<SearchHit>>(
-            List.of(new SearchHit("id1", "old", "mod", "source")),
+            List.of(new SearchHit("id1", "old", "mod", "source", null)),
             0L // epoch timestamp → definitely expired
         );
         writeEntry(cacheFile, oldEntry);
@@ -77,7 +77,7 @@ class CacheLayerTest {
     void searchCache_freshEntry_returnsData() {
         var query = new SearchQuery("fresh query");
         var results = List.of(
-            new SearchHit("id1", "fresh", "mod", "source")
+            new SearchHit("id1", "fresh", "mod", "source", null)
         );
 
         cache.putSearchResults(query, results);
@@ -132,7 +132,7 @@ class CacheLayerTest {
     void searchCache_emptyQuery_worksCorrectly() {
         var query = new SearchQuery("");
         var results = List.of(
-            new SearchHit("id1", "empty query result", "mod", "source")
+            new SearchHit("id1", "empty query result", "mod", "source", null)
         );
 
         cache.putSearchResults(query, results);
@@ -150,7 +150,7 @@ class CacheLayerTest {
     void clear_removesAllCachedData() {
         var query = new SearchQuery("clear test");
         var results = List.of(
-            new SearchHit("id1", "to be cleared", "mod", "source")
+            new SearchHit("id1", "to be cleared", "mod", "source", null)
         );
         cache.putSearchResults(query, results);
 
@@ -192,10 +192,10 @@ class CacheLayerTest {
     void putSearchResults_movesOldToStale() {
         var query = new SearchQuery("stale test");
         var oldResults = List.of(
-            new SearchHit("id1", "old data", "mod", "source")
+            new SearchHit("id1", "old data", "mod", "source", null)
         );
         var newResults = List.of(
-            new SearchHit("id2", "new data", "mod", "source")
+            new SearchHit("id2", "new data", "mod", "source", null)
         );
 
         // First put → creates fresh cache (no stale yet)

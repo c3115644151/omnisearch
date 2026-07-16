@@ -3,12 +3,13 @@ package com.cy311.omnisearch.data.repository;
 import com.cy311.omnisearch.data.model.*;
 import com.cy311.omnisearch.data.source.CaptchaCapableDataSource;
 import com.cy311.omnisearch.data.source.DataSource;
+import com.cy311.omnisearch.data.source.McmodDataSource;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 
-public class SearchRepository {
+public class SearchRepository implements AutoCloseable {
     private final CacheLayer cache;
     private final DataSource primarySource;
 
@@ -22,24 +23,46 @@ public class SearchRepository {
         cache.clear();
     }
 
+    @Override
+    public void close() {
+        if (primarySource instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                // Ignore close errors
+            }
+        }
+    }
+
     public CompletableFuture<List<SearchHit>> search(SearchQuery query) {
         // 1. Check fresh cache
         var cached = cache.getSearchResults(query);
         if (cached != null) {
             return CompletableFuture.completedFuture(cached);
         }
-        // 2. Cache miss → fetch remote
+        // 2. Cache miss -> fetch remote
         return primarySource.search(query)
             .thenApply(results -> {
                 cache.putSearchResults(query, results);
                 return results;
             })
             .exceptionally(ex -> {
-                // 3. Network error → try stale cache
+                // 3. Network error -> try stale cache
                 var stale = cache.getSearchResultsStale(query);
                 if (stale != null) return stale;
                 throw new CompletionException(ex);
             });
+    }
+
+    /**
+     * Fetches additional pages of search results (page 2+).
+     * Not cached (paginated results are transient).
+     */
+    public CompletableFuture<List<SearchHit>> searchMore(SearchQuery query, int page) {
+        if (primarySource instanceof McmodDataSource source) {
+            return source.searchMore(query, page);
+        }
+        return CompletableFuture.completedFuture(List.of());
     }
 
     public CompletableFuture<ItemPage> getPage(String pageId) {

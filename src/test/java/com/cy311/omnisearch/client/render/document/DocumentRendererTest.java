@@ -1,12 +1,16 @@
 package com.cy311.omnisearch.client.render.document;
 
 import com.cy311.omnisearch.client.render.RenderTestUtil;
+import com.cy311.omnisearch.client.render.image.ImageManager;
+import com.cy311.omnisearch.gui.theme.OmniTheme;
 import com.cy311.omnisearch.data.model.document.*;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -17,7 +21,7 @@ import static org.mockito.Mockito.*;
  *
  * <p>Uses mock Font where {@code font.lineHeight} is 0 (because lineHeight is a final field
  * and Mockito cannot stub fields). This means all drawString calls land at the same Y
- * within a block-level node. Y advancement is still observable via paragraph spacing (8px)
+ * within a block-level node. Y advancement is still observable via paragraph spacing (4px)
  * and the returned Y offsets.
  */
 class DocumentRendererTest {
@@ -110,7 +114,7 @@ class DocumentRendererTest {
     // ===========================================================
 
     @Test
-    void styledTextNode_boldRendersDouble() {
+    void styledTextNode_boldRendersViaComponent() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
         var renderer = createRenderer(font);
@@ -120,11 +124,11 @@ class DocumentRendererTest {
         renderDocument(renderer, gui, doc);
 
         var calls = RenderTestUtil.getDrawCalls(gui);
-        assertEquals(2, calls.size(),
-            "bold text should produce 2 drawString calls");
+        assertEquals(1, calls.size(),
+            "bold text should produce 1 drawString call via Component API");
         assertEquals("Bold", calls.get(0).text());
         assertEquals(X, calls.get(0).x());
-        assertEquals(X + 1, calls.get(1).x());
+        assertEquals(Y, calls.get(0).y());
     }
 
     @Test
@@ -342,7 +346,7 @@ class DocumentRendererTest {
     }
 
     @Test
-    void linkNode_underlinesText() {
+    void linkNode_underlinesTextOnHover() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
         var renderer = createRenderer(font);
@@ -351,9 +355,12 @@ class DocumentRendererTest {
             List.of(new TextNode("Hi")));
         var doc = new Document("test", null, null, List.of(link));
 
-        renderDocument(renderer, gui, doc);
+        // Paint with mouse hovering over the link (X=0..12, Y=0..9)
+        var layout = renderer.prepare(doc, WIDTH);
+        renderer.paint(gui, layout, X, Y, X + 1, Y + 1);
 
-        verify(gui).hLine(eq(0), eq(RenderTestUtil.PX_PER_CHAR * 2 - 1), anyInt(), eq(0xFF5555FF));
+        // Link underline only shows on hover, in white
+        verify(gui).hLine(eq(X), eq(X + RenderTestUtil.PX_PER_CHAR * 2 - 1), anyInt(), eq(OmniTheme.TEXT_WHITE));
     }
 
     @Test
@@ -394,8 +401,8 @@ class DocumentRendererTest {
         long headerCalls = calls.stream()
             .filter(c -> c.text().equals("Name") || c.text().equals("Value"))
             .count();
-        assertEquals(4, headerCalls,
-            "each header drawn twice (shadow)");
+        assertEquals(2, headerCalls,
+            "each header drawn once via Component API");
 
         // Header background fill (2 header cells)
         verify(gui, times(2)).fill(anyInt(), anyInt(), anyInt(), anyInt(),
@@ -510,7 +517,7 @@ class DocumentRendererTest {
         var content = calls.stream()
             .filter(c -> c.text().equals("Item"))
             .findFirst().orElseThrow();
-        assertEquals(X + 15, content.x());
+        assertEquals(X + 13, content.x());
     }
 
     // ===========================================================
@@ -580,7 +587,10 @@ class DocumentRendererTest {
     void imageNode_rendersPlaceholder() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(font);
+        // Return null future (image not yet loaded), so placeholder fallback fires
+        var imgMgr = mock(ImageManager.class);
+        when(imgMgr.getImage(anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        var renderer = new DocumentRenderer(font, imgMgr);
         var img = new ImageNode(
             "https://example.com/img.png", "alt text", null);
         var doc = new Document("test", null, null, List.of(img));
@@ -598,14 +608,19 @@ class DocumentRendererTest {
     void imageNode_placeholderDimensions() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(font);
+        // Return null future (image not yet loaded), so placeholder fallback fires
+        var imgMgr = mock(ImageManager.class);
+        when(imgMgr.getImage(anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        var renderer = new DocumentRenderer(font, imgMgr);
         var img = new ImageNode("url", "img", null);
         var doc = new Document("test", null, null, List.of(img));
 
         renderDocument(renderer, gui, doc, 10, 20);
 
-        // fill(10, 20, 10+64=74, 20+48=68, 0xFF444444)
-        verify(gui).fill(eq(10), eq(20), eq(74), eq(68),
+        // lineHeight=9: imageTopMargin=max(2,9/2)=4, imgH=9*4=36, imgW=min(36*3/2,200)=54
+        // node.y = 0 + imageTopMargin = 4, node.h = 36 (no margins in h)
+        // fill with offset(10,20): fill(10, 20+4=24, 10+54=64, 24+36=60, 0xFF444444)
+        verify(gui).fill(eq(10), eq(24), eq(64), eq(60),
             eq(0xFF444444));
     }
 
@@ -632,7 +647,10 @@ class DocumentRendererTest {
     void document_renderAllNodeTypes() {
         var gui = RenderTestUtil.createMockGuiGraphics();
         var font = RenderTestUtil.createMockFont();
-        var renderer = createRenderer(font);
+        // Use null-returning ImageManager so image alt text renders as placeholder
+        var imgMgr2 = mock(ImageManager.class);
+        when(imgMgr2.getImage(anyString())).thenReturn(CompletableFuture.completedFuture(null));
+        var renderer = new DocumentRenderer(font, imgMgr2);
 
         var doc = new Document("Full Doc", "TestMod", null, List.of(
             new HeadingNode(1,
@@ -747,5 +765,135 @@ class DocumentRendererTest {
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertTrue(calls.size() >= 2, "should have at least 2 draw calls");
         assertEquals(100, calls.get(0).y());
+    }
+
+    // ===========================================================
+    // 12. Image rendering with ImageManager (WebP end-to-end)
+    // ===========================================================
+
+    private static final String WEBP_URL =
+        "https://i.mcmod.cn/editor/upload/20240424/1713897356_557759_yZAd.webp";
+
+    /**
+     * Standalone ImageNode with a WebP URL: verify that renderImageNode
+     * calls imageManager.getImage(webpUrl).
+     */
+    @Test
+    void imageNode_webpUrl_callsImageManagerGetImage() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var imageManager = mock(ImageManager.class);
+        // Return a completed future with null (image not yet loaded -> placeholder path)
+        lenient().when(imageManager.getImage(anyString()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        var renderer = new DocumentRenderer(font, imageManager);
+        var img = new ImageNode(WEBP_URL, "暗夜巫妖-第1张图片", null, 475, 250);
+        var doc = new Document("test", null, null, List.of(img));
+
+        renderDocument(renderer, gui, doc);
+
+        // Verify imageManager.getImage was called with the WebP URL
+        verify(imageManager).getImage(WEBP_URL);
+    }
+
+    /**
+     * ImageNode inside a TableNode (the actual mcmod.cn structure):
+     * verify that renderImageNode is reached for images inside table cells
+     * and imageManager.getImage(webpUrl) is called.
+     */
+    @Test
+    void imageNode_inTable_webpUrl_callsImageManagerGetImage() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var imageManager = mock(ImageManager.class);
+        lenient().when(imageManager.getImage(anyString()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        var renderer = new DocumentRenderer(font, imageManager);
+
+        // Build a TableNode matching parser output: each cell is a ParagraphNode containing an ImageNode
+        ImageNode img1 = new ImageNode(WEBP_URL, "暗夜巫妖-第1张图片", null, 475, 250);
+        ImageNode img2 = new ImageNode(
+            "https://i.mcmod.cn/editor/upload/20240424/1713897813_557759_xuvp.webp",
+            "暗夜巫妖-第2张图片", null, 0, 0);
+
+        List<List<DocNode>> rows = List.of(
+            List.of(
+                new ParagraphNode(List.of(img1)),
+                new ParagraphNode(List.of(img2))
+            )
+        );
+        TableNode table = new TableNode(List.of(), rows);
+        var doc = new Document("test", null, null, List.of(table));
+
+        renderDocument(renderer, gui, doc);
+
+        // Verify imageManager.getImage was called with both WebP URLs
+        verify(imageManager).getImage(WEBP_URL);
+        verify(imageManager).getImage(
+            "https://i.mcmod.cn/editor/upload/20240424/1713897813_557759_xuvp.webp");
+    }
+
+    /**
+     * End-to-end: parse HTML with McmodParser, layout with DocumentRenderer.prepare(),
+     * paint with mock ImageManager. Verify imageManager.getImage is called with WebP URL.
+     */
+    @Test
+    void endToEnd_parsedWebpImage_callsImageManagerGetImage() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var imageManager = mock(ImageManager.class);
+        lenient().when(imageManager.getImage(anyString()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        var renderer = new DocumentRenderer(font, imageManager);
+
+        String html = """
+            <html><body>
+            <div class="itemname"><h5>暗夜巫妖</h5></div>
+            <div class="item-content common-text font14">
+            <div class="table-scroll"><table class="table table-bordered text-nowrap"><tbody>
+              <tr>
+                <td style="word-break: break-all;"><span class="figure"><img alt="暗夜巫妖-第1张图片" class="lazy" src="https://www.mcmod.cn/static/public/images/loading-colourful.gif" data-src="%s" data-error="//www.mcmod.cn/images/loadfail.gif" data-width="475" data-height="250" data-original="https://www.mcmod.cn/static/public/images/loading-colourful.gif" width="475" height="250"></span></td>
+              </tr>
+            </tbody></table></div>
+            </div>
+            </body></html>
+            """.formatted(WEBP_URL);
+
+        com.cy311.omnisearch.data.parser.McmodParser parser =
+            new com.cy311.omnisearch.data.parser.McmodParser();
+        var doc = parser.parseItemPage(html, "https://www.mcmod.cn/item/123.html");
+
+        renderDocument(renderer, gui, doc);
+
+        // The critical assertion: ImageManager.getImage must be called with the WebP URL.
+        // If this fails, it means the WebP URL was lost somewhere between parse -> layout -> render.
+        verify(imageManager).getImage(WEBP_URL);
+    }
+
+    /**
+     * ImageNode with a loaded image (non-null ResourceLocation from ImageManager):
+     * verify that gui.blit is called to render the texture.
+     */
+    @Test
+    void imageNode_loadedImage_callsBlit() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var imageManager = mock(ImageManager.class);
+        var mockLoc = mock(ResourceLocation.class);
+        when(imageManager.getImage(WEBP_URL))
+            .thenReturn(CompletableFuture.completedFuture(mockLoc));
+
+        var renderer = new DocumentRenderer(font, imageManager);
+        var img = new ImageNode(WEBP_URL, "", null, 475, 250);
+        var doc = new Document("test", null, null, List.of(img));
+
+        renderDocument(renderer, gui, doc);
+
+        // When image is loaded, blit should be called to render it
+        verify(gui).blit(eq(mockLoc), anyInt(), anyInt(), anyFloat(), anyFloat(),
+            anyInt(), anyInt(), anyInt(), anyInt());
     }
 }

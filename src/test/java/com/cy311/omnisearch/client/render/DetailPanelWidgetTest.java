@@ -19,10 +19,9 @@ class DetailPanelWidgetTest {
     private static final int BG_ALPHA = 0xCC000000;
     private static final int HEADER_BG = 0xAA1A1A1A;
     private static final int TITLE_COLOR = 0xFFFFAA00;
-    private static final int TEXT_GRAY = 0xFFAAAAAA;
-    private static final int HEADER_HEIGHT = 26;
-    private static final int BACK_BUTTON_SIZE = 18;
-    private static final int PADDING = 6;
+    private static final int HEADER_HEIGHT = 18;
+    private static final int BACK_BUTTON_SIZE = 14;
+    private static final int PADDING = 4;
 
     private final Font font = createMockFont();
     private final GuiGraphics gui = createMockGuiGraphics();
@@ -40,7 +39,8 @@ class DetailPanelWidgetTest {
     void render_paintsSemiTransparentBackground() {
         widget.render(gui, 0, 0, 400, 300, page);
 
-        verify(gui).fill(0, 0, 400, 300, BG_ALPHA);
+        // Full-background fill removed; header uses BG_PANEL and content uses BG_CONTENT
+        verify(gui, never()).fill(0, 0, 400, 300, BG_ALPHA);
     }
 
     @Test
@@ -55,16 +55,10 @@ class DetailPanelWidgetTest {
     void render_rendersBackButtonArea() {
         widget.render(gui, 0, 0, 400, 300, page);
 
-        // Back button at x=6, y=(26-18)/2=4, size 18x18
+        // Back button is now a simple drawString (←) at x=4, y=(18-9)/2+1=5
         int backX = PADDING;
-        int backY = (HEADER_HEIGHT - BACK_BUTTON_SIZE) / 2;
-        // Border lines
-        verify(gui).hLine(backX, backX + BACK_BUTTON_SIZE - 1, backY, TEXT_GRAY);
-        verify(gui).hLine(backX, backX + BACK_BUTTON_SIZE - 1, backY + BACK_BUTTON_SIZE - 1, TEXT_GRAY);
-        verify(gui).vLine(backX, backY, backY + BACK_BUTTON_SIZE - 1, TEXT_GRAY);
-        verify(gui).vLine(backX + BACK_BUTTON_SIZE - 1, backY, backY + BACK_BUTTON_SIZE - 1, TEXT_GRAY);
-        // Arrow text (←)
-        verify(gui).drawString(font, "\u2190", backX + 5, backY + (BACK_BUTTON_SIZE - font.lineHeight) / 2, TITLE_COLOR, false);
+        int backY = (HEADER_HEIGHT - font.lineHeight) / 2 + 1;
+        verify(gui).drawString(font, "\u2190", backX, backY, TITLE_COLOR, false);
     }
 
     @Test
@@ -73,7 +67,7 @@ class DetailPanelWidgetTest {
 
         int backX = PADDING;
         int titleX = backX + BACK_BUTTON_SIZE + PADDING;
-        int titleY = (HEADER_HEIGHT - font.lineHeight) / 2;
+        int titleY = (HEADER_HEIGHT - font.lineHeight) / 2 + 1;
         verify(gui).drawString(font, "娜迦鳞片", titleX, titleY, TITLE_COLOR, false);
     }
 
@@ -81,19 +75,16 @@ class DetailPanelWidgetTest {
     void render_rendersSourceMod() {
         widget.render(gui, 0, 0, 400, 300, page);
 
-        int backX = PADDING;
-        int titleX = backX + BACK_BUTTON_SIZE + PADDING;
-        int titleY = (HEADER_HEIGHT - font.lineHeight) / 2;
+        int titleY = (HEADER_HEIGHT - font.lineHeight) / 2 + 1;
 
-        // Source mod renders as a clickable tag in the header (blue text with underline on dark blue background)
-        int tagStartX = titleX + font.width("娜迦鳞片") + PADDING;
-        int tagWidth = font.width("[暮色森林]") + 8;
+        // Source mod renders as a clickable tag in the header (blue text on dark blue background)
+        // Tag is right-aligned to scrollbar right edge: tagStartX = x + width - tagWidth
+        int tagWidth = font.width("[暮色森林]") + 6;
+        int tagStartX = 400 - PADDING - tagWidth;
         // Tag background
         verify(gui).fill(tagStartX, titleY - 1, tagStartX + tagWidth, titleY - 1 + font.lineHeight + 2, 0xFF2A2A4A);
         // Tag text (blue link-style)
-        verify(gui).drawString(font, "[暮色森林]", tagStartX + 4, titleY, 0xFF5555FF, false);
-        // Underline (consistent with document links)
-        verify(gui).hLine(tagStartX + 4, tagStartX + 4 + font.width("[暮色森林]") - 1, titleY + font.lineHeight - 1, 0xFF5555FF);
+        verify(gui).drawString(font, "[暮色森林]", tagStartX + 3, titleY, 0xFF5555FF, false);
     }
 
     @Test
@@ -119,26 +110,19 @@ class DetailPanelWidgetTest {
     void render_rendersContentAreaBackground() {
         widget.render(gui, 0, 0, 400, 300, page);
 
-        int contentX = PADDING;
         int contentY = HEADER_HEIGHT + 1;
-        int contentWidth = 400 - PADDING * 2;
-        int contentHeight = 300 - contentY - PADDING;
-        verify(gui).fill(contentX, contentY, contentX + contentWidth, contentY + contentHeight, 0xFF0A0A0A);
+        // Background fills from x+1 to x+width-1, top to bottom of body (no padding gap)
+        verify(gui).fill(1, contentY, 399, 300, 0xFF0A0A0A);
     }
 
     @Test
     void render_paintsMetadataBackground() {
-        // Metadata section removed in new design; content area starts directly below header
         widget.render(gui, 0, 0, 400, 300, page);
 
-        int contentX = PADDING;
         int contentY = HEADER_HEIGHT + 1;
-        int contentWidth = 400 - PADDING * 2;
-        int contentHeight = 300 - contentY - PADDING;
-        verify(gui).fill(contentX, contentY, contentX + contentWidth, contentY + contentHeight, 0xFF0A0A0A);
-        // No separate metadata background or separator line
-        verify(gui, never()).fill(0, HEADER_HEIGHT + 1, 400, HEADER_HEIGHT + 1 + 50, BG_ALPHA);
-        verify(gui, never()).hLine(0, 399, HEADER_HEIGHT + 1 + 50, 0xFF555555);
+        verify(gui).fill(1, contentY, 399, 300, 0xFF0A0A0A);
+        verify(gui, never()).fill(0, HEADER_HEIGHT + 1, 400, HEADER_HEIGHT + 1 + 40, BG_ALPHA);
+        verify(gui, never()).hLine(0, 399, HEADER_HEIGHT + 1 + 40, 0xFF555555);
     }
 
     @Test
@@ -147,8 +131,8 @@ class DetailPanelWidgetTest {
 
         int contentX = PADDING;
         int contentY = HEADER_HEIGHT + 1;
-        int contentWidth = 400 - PADDING * 2;
-        int contentHeight = 300 - contentY - PADDING;
+        int contentWidth = 400 - PADDING - 6;
+        int contentHeight = 300 - contentY;
 
         assertArrayEquals(new int[]{contentX, contentY, contentWidth, contentHeight}, bounds);
     }
@@ -159,8 +143,8 @@ class DetailPanelWidgetTest {
 
         int contentX = 50 + PADDING;
         int contentY = 60 + HEADER_HEIGHT + 1;
-        int contentWidth = 400 - PADDING * 2;
-        int contentHeight = (60 + 300) - contentY - PADDING;
+        int contentWidth = 400 - PADDING - 6;
+        int contentHeight = (60 + 300) - contentY;
 
         assertArrayEquals(new int[]{contentX, contentY, contentWidth, contentHeight}, bounds);
     }
@@ -191,7 +175,7 @@ class DetailPanelWidgetTest {
 
         int backX = PADDING;
         int titleX = backX + BACK_BUTTON_SIZE + PADDING;
-        int titleY = (HEADER_HEIGHT - wrapFont.lineHeight) / 2;
+        int titleY = (HEADER_HEIGHT - wrapFont.lineHeight) / 2 + 1;
 
         // Verify the drawString was called with a truncated title (containing "...")
         // The truncated text will be "null..." if plainSubstrByWidth is not stubbed,

@@ -12,10 +12,18 @@ out/
 .settings/
 .classpath
 .project
+.eclipse/
+bin/
 
 # Minecraft runs
 runs/
 run/
+
+# Minecraft logs and runtime artifacts
+versions/*/logs/
+versions/*/bin/
+versions/*/.eclipse/
+versions/*/omnisearch-debug.log
 
 # Temporary test artifacts (never commit)
 captcha.html

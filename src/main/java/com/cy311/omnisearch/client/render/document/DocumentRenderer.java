@@ -11,6 +11,8 @@ import com.cy311.omnisearch.data.model.document.Document;
 import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,9 +27,6 @@ import java.util.Set;
  * so that scrolling only changes the paint offset without re-running layout.
  */
 public class DocumentRenderer {
-
-    private static final int IMAGE_PLACEHOLDER_WIDTH = 64;
-    private static final int IMAGE_PLACEHOLDER_HEIGHT = 48;
 
     // MC GUI sprite locations for inline SVG icon rendering (1.21.1 sprite system)
     private static final ResourceLocation MC_HEART_CONTAINER = ResourceLocation.withDefaultNamespace("hud/heart/container");
@@ -45,10 +44,12 @@ public class DocumentRenderer {
     @Nullable
     private final ImageManager imageManager;
 
-    // Transient paint state — set at the start of paint()
+    // Transient paint state - set at the start of paint()
     private GuiGraphics gui;
     private int paintOffsetX;
     private int paintOffsetY;
+    private int mouseAbsX = -1;
+    private int mouseAbsY = -1;
 
     public record LinkHit(int x, int y, int w, int h, String url) {}
 
@@ -84,9 +85,15 @@ public class DocumentRenderer {
      * @param offsetY  absolute Y of the content area top edge, minus scroll offset
      */
     public void paint(GuiGraphics g, PreparedDocumentLayout layout, int offsetX, int offsetY) {
+        paint(g, layout, offsetX, offsetY, -1, -1);
+    }
+
+    public void paint(GuiGraphics g, PreparedDocumentLayout layout, int offsetX, int offsetY, int mouseX, int mouseY) {
         this.gui = g;
         this.paintOffsetX = offsetX;
         this.paintOffsetY = offsetY;
+        this.mouseAbsX = mouseX;
+        this.mouseAbsY = mouseY;
         for (LayoutNode node : layout.nodes()) {
             renderLayoutNode(node);
         }
@@ -115,14 +122,26 @@ public class DocumentRenderer {
     // ── Block rendering ──
 
     private void renderHeading(LayoutNode node, int rx, int ry) {
-        String text = node.text;
-        if (text == null || text.isEmpty()) return;
         int color;
         switch (node.headingLevel) {
             case 1 -> color = OmniTheme.TEXT_HEADING_1;
             case 2 -> color = OmniTheme.TEXT_HEADING_2;
             default -> color = OmniTheme.TEXT_WHITE;
         }
+        if (!node.inlineChildren.isEmpty()) {
+            // Heading laid out as wrapped inline fragments - apply heading color
+            // to each child that hasn't had an explicit color set.
+            for (LayoutNode inline : node.inlineChildren) {
+                if (inline.textColor == -1) {
+                    inline = inline.withColor(color);
+                }
+                renderLayoutNode(inline);
+            }
+            return;
+        }
+        // Fallback: single-line heading with text (used by SectionNode)
+        String text = node.text;
+        if (text == null || text.isEmpty()) return;
         gui.drawString(font, text, rx, ry, color, false);
     }
 
@@ -137,48 +156,62 @@ public class DocumentRenderer {
 
     private void renderInlineTextNode(LayoutNode node, int rx, int ry) {
         if (node.text == null || node.text.isEmpty()) return;
+        boolean linkHovered = node.linkUrl != null
+            && mouseAbsX >= rx && mouseAbsX <= rx + node.w
+            && mouseAbsY >= ry && mouseAbsY <= ry + font.lineHeight;
         int color = node.linkUrl != null
-            ? OmniTheme.TEXT_LINK
+            ? (linkHovered ? OmniTheme.TEXT_WHITE : OmniTheme.TEXT_LINK)
             : node.textColor != -1
                 ? node.textColor
-                : (node.type == LayoutType.STYLED_TEXT ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE);
-        gui.drawString(font, node.text, rx, ry, color, false);
+                : OmniTheme.TEXT_WHITE;
         if (node.isBold) {
-            gui.drawString(font, node.text, rx + 1, ry, color, false);
+            // Use Component API for bold: Minecraft renders bold via glyph widening,
+            // which works for both ASCII and CJK characters. Shadow-based bold
+            // (drawing text twice with offset) is invisible for dense CJK bitmaps.
+            Component component = Component.literal(node.text)
+                .withStyle(Style.EMPTY.withBold(true));
+            gui.drawString(font, component, rx, ry, color, false);
+        } else {
+            gui.drawString(font, node.text, rx, ry, color, false);
         }
-        if (node.linkUrl != null) {
-            gui.hLine(rx, rx + Math.max(0, node.w - 1), ry + font.lineHeight - 1, OmniTheme.TEXT_LINK);
+        if (node.linkUrl != null && linkHovered) {
+            gui.hLine(rx, rx + Math.max(0, node.w - 1), ry + font.lineHeight, OmniTheme.TEXT_WHITE);
         }
     }
 
     private void renderImageNode(LayoutNode node, int rx, int ry) {
         String url = node.imageUrl;
-        int imgX = rx;
-        int imgY = ry;
+        if (imageManager == null || url == null || url.isBlank()) return;
 
-        if (imageManager != null && url != null && !url.isBlank()) {
-            ResourceLocation loc = imageManager.getImage(url).getNow(null);
-            if (loc != null) {
-                ImageDimensions dims = imageManager.getCachedSize(url);
-                int renderW = dims != null ? Math.min(dims.width(), node.w) : IMAGE_PLACEHOLDER_WIDTH;
-                int renderH = dims != null
-                    ? (int) ((float) renderW / dims.width() * dims.height())
-                    : IMAGE_PLACEHOLDER_HEIGHT;
-                gui.blit(loc, imgX, imgY, 0, 0, renderW, renderH, renderW, renderH);
-                return;
+        ResourceLocation loc = imageManager.getImage(url).getNow(null);
+        if (loc != null) {
+            int renderW = node.w;
+            int renderH;
+            // Use real aspect ratio from loaded image, scaled to layout width
+            ImageDimensions dims = imageManager.getCachedSize(url);
+            if (dims != null && dims.width() > 0 && dims.height() > 0) {
+                renderH = (int) ((float) renderW / dims.width() * dims.height());
+            } else {
+                renderH = node.h; // fallback — layout estimated height
             }
+            // Cap height to 8 lines of text (matching layout engine), re-scale width to preserve aspect ratio
+            int maxH = font.lineHeight * 8;
+            if (renderH > maxH) {
+                float scale = (float) maxH / renderH;
+                renderH = maxH;
+                renderW = Math.max(1, (int) (renderW * scale));
+            }
+            if (renderW > 0 && renderH > 0) {
+                gui.blit(loc, rx, ry, 0, 0, renderW, renderH, renderW, renderH);
+            }
+            return;
         }
 
-        // Placeholder fallback
-        gui.fill(imgX, imgY, imgX + IMAGE_PLACEHOLDER_WIDTH, imgY + IMAGE_PLACEHOLDER_HEIGHT, OmniTheme.BG_PLACEHOLDER);
-        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, OmniTheme.BORDER_PLACEHOLDER);
-        gui.hLine(imgX, imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
-        gui.vLine(imgX, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
-        gui.vLine(imgX + IMAGE_PLACEHOLDER_WIDTH - 1, imgY, imgY + IMAGE_PLACEHOLDER_HEIGHT - 1, OmniTheme.BORDER_PLACEHOLDER);
-
+        // Not yet loaded — show placeholder
+        gui.fill(rx, ry, rx + node.w, ry + node.h, OmniTheme.BG_PLACEHOLDER);
         String alt = node.alt;
         if (alt != null && !alt.isEmpty()) {
-            gui.drawString(font, alt, imgX, imgY + IMAGE_PLACEHOLDER_HEIGHT + 1, OmniTheme.TEXT_GRAY, false);
+            gui.drawString(font, alt, rx + 2, ry + node.h + 1, OmniTheme.TEXT_GRAY, false);
         }
     }
 
@@ -190,6 +223,12 @@ public class DocumentRenderer {
         if (url != null && url.startsWith("mc-icon://")) {
             String iconName = url.substring("mc-icon://".length());
             if (tryRenderMcIcon(iconName, rx, ry, iconSize)) {
+                return;
+            }
+            // Known text-based icons: don't log as unmapped, just render abbreviation
+            if (isKnownTextIcon(iconName)) {
+                String abbr = abbreviateIconName(iconName);
+                gui.drawString(font, abbr, rx, ry, 0xFF888888, false);
                 return;
             }
             logUnknownIconOnce(iconName);
@@ -294,6 +333,29 @@ public class DocumentRenderer {
         }
     }
 
+    /**
+     * Checks if an mc-icon name is a known text-based fallback icon.
+     * These should not trigger "unmapped" warnings since they intentionally use text rendering.
+     */
+    private static boolean isKnownTextIcon(String iconName) {
+        String raw = iconName
+            .replace("icon-", "")
+            .replace("-full", "")
+            .replace("-half", "")
+            .replace("-empty", "")
+            .replace("-container", "");
+        return switch (raw) {
+            case "experience", "exp", "saturation", "sat", "armor", "air",
+                 "speed", "slowness", "haste", "mining-fatigue", "strength",
+                 "weakness", "jump-boost", "resistance", "fire-resistance",
+                 "water-breathing", "invisibility", "night-vision", "regeneration",
+                 "poison", "wither", "absorption", "health-boost", "glowing",
+                 "levitation", "luck", "bad-luck", "unluck", "slow-falling",
+                 "conduit-power", "dolphins-grace", "darkness" -> true;
+            default -> false;
+        };
+    }
+
     private void renderLinkNode(LayoutNode node, int rx, int ry) {
         for (LayoutNode child : node.inlineChildren) {
             renderLayoutNode(child);
@@ -301,30 +363,56 @@ public class DocumentRenderer {
     }
 
     private void renderTableNode(LayoutNode node, int rx, int ry) {
-        int rowH = font.lineHeight + 4;
+        int headerY = -1;
+        int lastCellY = -1;
+        int rowIdx = 0;
 
         for (int i = 0; i < node.children.size(); i++) {
             LayoutNode cell = node.children.get(i);
             int cx = cell.x + paintOffsetX;
             int cy = cell.y + paintOffsetY;
-            int color = cell.isHeader ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE;
+            int ch = cell.h; // use actual cell height from layout
+            int color = cell.isHeader ? OmniTheme.TEXT_HEADING_2 : OmniTheme.TEXT_WHITE;
 
-            // Background
-            if (cell.isHeader) {
-                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + rowH, OmniTheme.BG_TABLE_HEADER);
-            } else if (i % 4 == 0) {
-                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + rowH, OmniTheme.BG_ROW_ALT);
+            // Track row index: increment when Y changes (new row)
+            if (headerY < 0) {
+                headerY = cy;
+                lastCellY = cy;
+            } else if (cy != lastCellY) {
+                rowIdx++;
+                lastCellY = cy;
             }
 
-            // Cell content: inline children (icons + text) or plain text fallback
+            // Background: header gets header bg, data rows alternate
+            if (cell.isHeader) {
+                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + ch, OmniTheme.BG_TABLE_HEADER);
+            } else {
+                if (rowIdx % 2 == 1) {
+                    gui.fill(cx - 2, cy, cx + cell.w + 2, cy + ch, 0xFF222222);
+                }
+            }
+
+            // Cell border
+            gui.hLine(cx - 2, cx + cell.w + 2, cy, OmniTheme.BORDER_LIGHT);
+            gui.hLine(cx - 2, cx + cell.w + 2, cy + ch - 1, OmniTheme.BORDER);
+
+            // Cell content: block children (images), inline children (icons + text), or plain text fallback
+            if (!cell.children.isEmpty()) {
+                for (LayoutNode child : cell.children) {
+                    renderLayoutNode(child);
+                }
+            }
             if (!cell.inlineChildren.isEmpty()) {
                 for (LayoutNode inline : cell.inlineChildren) {
                     renderLayoutNode(inline);
                 }
             } else if (cell.text != null && !cell.text.isEmpty()) {
-                gui.drawString(font, cell.text, cx, cy + 2, color, false);
                 if (cell.isHeader) {
-                    gui.drawString(font, cell.text, cx + 1, cy + 2, color, false);
+                    var component = net.minecraft.network.chat.Component.literal(cell.text)
+                        .setStyle(net.minecraft.network.chat.Style.EMPTY.withBold(true));
+                    gui.drawString(font, component, cx, cy + 2, color, false);
+                } else {
+                    gui.drawString(font, cell.text, cx, cy + 2, color, false);
                 }
             }
         }
@@ -350,14 +438,19 @@ public class DocumentRenderer {
                 int cx = child.x + paintOffsetX;
                 int cy = child.y + paintOffsetY;
                 boolean isMarker = child.text.length() <= 3 && (child.text.contains("•") || Character.isDigit(child.text.charAt(0)));
-                int color = isMarker ? OmniTheme.TEXT_LIGHT : OmniTheme.TEXT_WHITE;
+                int color = isMarker ? OmniTheme.TEXT_HEADING_2 : OmniTheme.TEXT_WHITE;
                 gui.drawString(font, child.text, cx, cy, color, false);
+            } else if (child.type == LayoutType.PARAGRAPH) {
+                // Wrapped list item content
+                for (LayoutNode inline : child.inlineChildren) {
+                    renderLayoutNode(inline);
+                }
             }
         }
     }
 
     private void renderDivider(LayoutNode node, int rx, int ry) {
         int midY = ry + font.lineHeight / 2;
-        gui.hLine(rx, rx + node.w, midY, OmniTheme.BORDER_PLACEHOLDER);
+        gui.hLine(rx, rx + node.w, midY, OmniTheme.BORDER_LIGHT);
     }
 }

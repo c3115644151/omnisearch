@@ -18,53 +18,60 @@ import java.util.concurrent.CompletableFuture;
  * Uses Jsoup for HTTP (same as verified MapleSugar365 fork).
  * Jsoup's native cookie management matches mcmod.cn's expectations,
  * unlike java.net.http.HttpClient which triggers 403 bot detection.
- * Cookie persistence is instance-scoped (thread-safe).
+ * Cookie persistence is instance-scoped (thread-safe via SessionCookieStore).
+ * <p>
+ * Implements AutoCloseable to release the RequestExecutor thread pool.
  */
-public class McmodHttpClient {
+public class McmodHttpClient implements AutoCloseable {
 
     private static final String SEARCH_URL = "https://search.mcmod.cn/s";
     private static final String BASE_URL = "https://www.mcmod.cn";
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36";
 
-    // Cross-request cookie persistence (thread-safe)
-    private final Map<String, String> cookieStore = new HashMap<>();
+    // Cross-request cookie persistence (thread-safe via snapshot/merge)
+    private final SessionCookieStore cookieStore = new SessionCookieStore();
+    private final RequestExecutor executor = new RequestExecutor();
 
     // ──────────────────────────────────────────────
     // Public API
     // ──────────────────────────────────────────────
 
     public CompletableFuture<String> search(String query) {
+        return search(query, 1);
+    }
+
+    public CompletableFuture<String> search(String query, int page) {
         if (query == null || query.isBlank()) {
             return CompletableFuture.completedFuture("");
         }
-        return asyncGet(() -> doGet(buildSearchUrl(query)));
+        return executor.submit(() -> doGet(buildSearchUrl(query, page)));
     }
 
     public CompletableFuture<String> getItemPage(String itemId) {
         if (itemId == null || itemId.isBlank()) {
             return CompletableFuture.completedFuture("");
         }
-        return asyncGet(() -> doGet(buildItemUrl(itemId)));
+        return executor.submit(() -> doGet(buildItemUrl(itemId)));
     }
 
     public CompletableFuture<String> getModPage(String modId) {
         if (modId == null || modId.isBlank()) {
             return CompletableFuture.completedFuture("");
         }
-        return asyncGet(() -> doGet(buildModUrl(modId)));
+        return executor.submit(() -> doGet(buildModUrl(modId)));
     }
 
     public CompletableFuture<String> submitCaptcha(String answerUrl, String answer, Map<String, String> hiddenFields) {
         if (answerUrl == null || answerUrl.isBlank() || answer == null || answer.isBlank()) {
             return CompletableFuture.completedFuture("");
         }
-        return asyncGet(() -> {
+        return executor.submit(() -> {
             Connection conn = Jsoup.connect(answerUrl)
                 .userAgent(USER_AGENT)
                 .header("Referer", answerUrl)
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .cookies(cookieStore);
+                .cookies(cookieStore.snapshot());
 
             // Hidden fields first, then captcha params so captcha params take precedence
             if (hiddenFields != null) {
@@ -80,9 +87,7 @@ public class McmodHttpClient {
                 .followRedirects(false)
                 .ignoreHttpErrors(true)
                 .execute();
-            synchronized (cookieStore) {
-                cookieStore.putAll(res.cookies());
-            }
+            cookieStore.merge(res.cookies());
             return res.body();
         });
     }
@@ -92,8 +97,16 @@ public class McmodHttpClient {
     // ──────────────────────────────────────────────
 
     public static String buildSearchUrl(String query) {
+        return buildSearchUrl(query, 1);
+    }
+
+    public static String buildSearchUrl(String query, int page) {
         String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        return SEARCH_URL + "?key=" + encoded;
+        String url = SEARCH_URL + "?key=" + encoded + "&filter=3";
+        if (page > 1) {
+            url += "&page=" + page;
+        }
+        return url;
     }
 
     static String buildItemUrl(String itemId) {
@@ -118,16 +131,14 @@ public class McmodHttpClient {
             Connection.Response res = Jsoup.connect(url)
                 .userAgent(USER_AGENT)
                 .header("Referer", "https://www.mcmod.cn/")
-                .header("Accept", "image/avif,image/webp,image/png,image/*,*/*;q=0.8")
+                .header("Accept", "image/avif,image/webp,image/png,image/*,*;q=0.8")
                 .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .cookies(cookieStore)
+                .cookies(cookieStore.snapshot())
                 .ignoreContentType(true)
                 .ignoreHttpErrors(true)
                 .followRedirects(true)
                 .execute();
-            synchronized (cookieStore) {
-                cookieStore.putAll(res.cookies());
-            }
+            cookieStore.merge(res.cookies());
             if (res.statusCode() >= 200 && res.statusCode() < 400) {
                 return res.bodyAsBytes();
             }
@@ -150,44 +161,32 @@ public class McmodHttpClient {
     // ──────────────────────────────────────────────
 
     void injectCookieStore(Map<String, String> cookies) {
-        if (cookies != null) {
-            synchronized (cookieStore) {
-                cookieStore.putAll(cookies);
-            }
-        }
+        cookieStore.merge(cookies);
     }
 
     Map<String, String> getCookieStore() {
-        synchronized (cookieStore) {
-            return new HashMap<>(cookieStore);
-        }
+        return cookieStore.snapshot();
+    }
+
+    /**
+     * Returns the underlying SessionCookieStore for advanced testing.
+     */
+    SessionCookieStore getCookieStoreInstance() {
+        return cookieStore;
+    }
+
+    // ──────────────────────────────────────────────
+    // Lifecycle
+    // ──────────────────────────────────────────────
+
+    @Override
+    public void close() {
+        executor.close();
     }
 
     // ──────────────────────────────────────────────
     // Internal HTTP execution
     // ──────────────────────────────────────────────
-
-    /**
-     * Runs a blocking HTTP call on a dedicated daemon thread.
-     * <p>
-     * Minecraft's environment is incompatible with ForkJoinPool.commonPool()
-     * (classloader issues). We use a manually created thread instead of
-     * {@link CompletableFuture#supplyAsync}.
-     */
-    private CompletableFuture<String> asyncGet(Callable<String> task) {
-        CompletableFuture<String> future = new CompletableFuture<>();
-        Thread thread = new Thread(() -> {
-            try {
-                future.complete(task.call());
-            } catch (Throwable t) {
-                future.completeExceptionally(t);
-            }
-        });
-        thread.setName("omnisearch-http");
-        thread.setDaemon(true);
-        thread.start();
-        return future;
-    }
 
     private String doGet(String url) {
         try {
@@ -196,13 +195,11 @@ public class McmodHttpClient {
                 .header("Referer", "https://www.mcmod.cn/")
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .cookies(cookieStore)
+                .cookies(cookieStore.snapshot())
                 .method(Connection.Method.GET)
                 .ignoreHttpErrors(true)
                 .execute();
-            synchronized (cookieStore) {
-                cookieStore.putAll(res.cookies());
-            }
+            cookieStore.merge(res.cookies());
             return res.body();
         } catch (Exception e) {
             throw new RuntimeException("GET request failed: " + url, e);

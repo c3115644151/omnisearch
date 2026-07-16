@@ -51,8 +51,8 @@ class OmnisearchScreenTest {
 
     @Test
     void searchResultsLoaded_setsResultsAndIdle() {
-        var hit1 = new SearchHit("item/1", "Naga Scale", "item", "Twilight Forest");
-        var hit2 = new SearchHit("item/2", "Naga Trophy", "item", "Twilight Forest");
+        var hit1 = new SearchHit("item/1", "Naga Scale", "item", "Twilight Forest", null);
+        var hit2 = new SearchHit("item/2", "Naga Trophy", "item", "Twilight Forest", null);
         var state = SearchState.initial()
             .withPage(SearchState.Page.RESULTS)
             .withLoading(SearchState.LoadingState.LOADING);
@@ -82,9 +82,9 @@ class OmnisearchScreenTest {
     @Test
     void resultSelected_validIndex_switchesToDetailAndPushesNavStack() {
         var hits = List.of(
-            new SearchHit("item/a", "Alpha", "item", "ModA"),
-            new SearchHit("item/b", "Beta", "item", "ModB"),
-            new SearchHit("item/c", "Gamma", "item", "ModC")
+            new SearchHit("item/a", "Alpha", "item", "ModA", null),
+            new SearchHit("item/b", "Beta", "item", "ModB", null),
+            new SearchHit("item/c", "Gamma", "item", "ModC", null)
         );
         var state = SearchState.initial().withResults(hits);
         var result = SearchReducer.reduce(state, new SearchEvent.ResultSelected(1));
@@ -98,9 +98,9 @@ class OmnisearchScreenTest {
     @Test
     void resultSelected_outOfBounds_throws() {
         var hits = List.of(
-            new SearchHit("item/a", "Alpha", "item", "ModA"),
-            new SearchHit("item/b", "Beta", "item", "ModB"),
-            new SearchHit("item/c", "Gamma", "item", "ModC")
+            new SearchHit("item/a", "Alpha", "item", "ModA", null),
+            new SearchHit("item/b", "Beta", "item", "ModB", null),
+            new SearchHit("item/c", "Gamma", "item", "ModC", null)
         );
         var state = SearchState.initial().withResults(hits);
         assertThrows(IndexOutOfBoundsException.class,
@@ -127,7 +127,7 @@ class OmnisearchScreenTest {
     void goBack_withHistory_restoresPreviousState() {
         var s0 = SearchState.initial()
             .withResults(List.of(
-                new SearchHit("item/1", "Naga Scale", "item", "Twilight")
+                new SearchHit("item/1", "Naga Scale", "item", "Twilight", null)
             ));
         var stateWithHistory = s0.withNavStack(new NavigationStack().push(s0));
         var detailState = stateWithHistory
@@ -181,7 +181,7 @@ class OmnisearchScreenTest {
         var state = SearchState.initial()
             .withPage(SearchState.Page.DETAIL)
             .withQuery(new SearchQuery("test"))
-            .withResults(List.of(new SearchHit("id", "name", "type", "mod")))
+            .withResults(List.of(new SearchHit("id", "name", "type", "mod", null)))
             .withErrorMessage("error");
         var result = SearchReducer.reduce(state, new SearchEvent.Dismiss());
         assertEquals(SearchState.Page.SEARCH, result.currentPage());
@@ -198,7 +198,7 @@ class OmnisearchScreenTest {
 
     @Test
     void loadingState_fullLifecycle() {
-        var hit = new SearchHit("item/1", "Naga Scale", "item", "Twilight");
+        var hit = new SearchHit("item/1", "Naga Scale", "item", "Twilight", null);
         var s0 = SearchState.initial();
         assertEquals(SearchState.LoadingState.IDLE, s0.loading());
 
@@ -257,7 +257,7 @@ class OmnisearchScreenTest {
             .withLoading(SearchState.LoadingState.LOADING)
             .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")));
         var result = SearchReducer.reduce(state, new SearchEvent.SearchResultsLoaded(
-            List.of(new SearchHit("item/1", "a", "item", "mod"))
+            List.of(new SearchHit("item/1", "a", "item", "mod", null))
         ));
         assertNull(result.pendingRequest());
     }

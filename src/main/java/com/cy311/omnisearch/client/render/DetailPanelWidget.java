@@ -4,35 +4,34 @@ import com.cy311.omnisearch.data.model.ItemPage;
 import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
-
-// verified: GuiGraphics fill/hLine/vLine/drawString signatures from lexxie.dev NeoForge 1.21.1 javadoc 2026-06-14
-// verified: Font.width(String) from lexxie.dev NeoForge 1.21.1 2026-06-14
+import net.minecraft.network.chat.Component;
 
 /**
- * Full-screen detail panel for viewing an {@link ItemPage}.
- * <p>
- * Design: compact header with back button + title + source mod tag inline.
- * Content area starts immediately below header.
+ * Compact detail header for the floating window.
+ * Single-line: back button + title + source mod tag.
  */
 public class DetailPanelWidget {
 
-    private static final int HEADER_HEIGHT = 26;
-    private static final int BACK_BUTTON_SIZE = 18;
-    private static final int PADDING = 6;
-
     private final Font font;
-    // Track source mod tag bounds for click detection
     private int tagX, tagY, tagW, tagH;
     private String tagUrl;
-    // Track title bounds for click detection
     private int titleClickX, titleClickY, titleClickW, titleClickH;
     private String titleUrl;
+    // Track original (untruncated) text for tooltips
+    private String originalTitle;
+    private String originalModName;
+    private boolean titleTruncated;
+    private boolean modTruncated;
+    // Track hover state for tooltips (set during render, used after)
+    private boolean titleHovered;
+    private boolean tagHovered;
+    private int lastMouseX;
+    private int lastMouseY;
 
     public DetailPanelWidget(Font font) {
         this.font = font;
     }
 
-    /** Returns the title clickable region [x, y, w, h]. Null if no page URL. */
     @org.jetbrains.annotations.Nullable
     public int[] getTitleClickTarget() {
         if (titleUrl == null) return null;
@@ -42,38 +41,47 @@ public class DetailPanelWidget {
     @org.jetbrains.annotations.Nullable
     public String getTitleUrl() { return titleUrl; }
 
-    /** Returns the source mod tag clickable region [x, y, w, h]. Null if no tag. */
     @org.jetbrains.annotations.Nullable
     public int[] getTagClickTarget() {
         if (tagUrl == null) return null;
-        return new int[]{tagX, tagY, tagW, tagH, 0}; // url stored separately
+        return new int[]{tagX, tagY, tagW, tagH, 0};
     }
 
     @org.jetbrains.annotations.Nullable
     public String getTagUrl() { return tagUrl; }
 
     public void render(GuiGraphics gui, int x, int y, int width, int height, ItemPage page) {
+        render(gui, x, y, width, height, page, 0, 0);
+    }
+
+    public void render(GuiGraphics gui, int x, int y, int width, int height, ItemPage page, int mouseX, int mouseY) {
         tagX = tagY = tagW = tagH = 0;
         tagUrl = null;
         titleClickX = titleClickY = titleClickW = titleClickH = 0;
         titleUrl = null;
+        originalTitle = null;
+        originalModName = null;
+        titleTruncated = false;
+        modTruncated = false;
+        titleHovered = false;
+        tagHovered = false;
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
 
-        // ---- Background ----
-        gui.fill(x, y, x + width, y + height, OmniTheme.BG_DARK);
+        // Header bar
+        gui.fill(x, y, x + width, y + OmniTheme.HEADER_HEIGHT, OmniTheme.BG_PANEL);
+        gui.hLine(x, x + width - 1, y + OmniTheme.HEADER_HEIGHT, OmniTheme.BORDER);
 
-        // ---- Header bar ----
-        gui.fill(x, y, x + width, y + HEADER_HEIGHT, OmniTheme.BG_PANEL);
-        gui.hLine(x, x + width - 1, y + HEADER_HEIGHT, OmniTheme.BORDER);
+        // Back button (centered vertically, +1 for glyph visual centering)
+        int backX = x + OmniTheme.PADDING;
+        int backY = y + (OmniTheme.HEADER_HEIGHT - font.lineHeight) / 2 + 1;
+        boolean backHovered = mouseX >= backX && mouseX <= backX + OmniTheme.BACK_BUTTON_SIZE
+                && mouseY >= backY && mouseY <= backY + font.lineHeight;
+        gui.drawString(font, "\u2190", backX, backY, backHovered ? OmniTheme.TEXT_WHITE : OmniTheme.TEXT_HEADING_1, false);
 
-        // Back button (arrow)
-        int backX = x + PADDING;
-        int backY = y + (HEADER_HEIGHT - BACK_BUTTON_SIZE) / 2;
-        drawBackButton(gui, backX, backY, BACK_BUTTON_SIZE, BACK_BUTTON_SIZE);
-
-        // Title + source mod in one block, vertically aligned
-        int titleX = backX + BACK_BUTTON_SIZE + PADDING;
-        // Align title text to vertical center of header
-        int titleY = y + (HEADER_HEIGHT - font.lineHeight) / 2;
+        // Title + source mod
+        int titleX = backX + OmniTheme.BACK_BUTTON_SIZE + OmniTheme.PADDING;
+        int titleY = y + (OmniTheme.HEADER_HEIGHT - font.lineHeight) / 2 + 1;
 
         String title = page.title();
         String sourceModRaw = page.sourceMod();
@@ -89,51 +97,80 @@ public class DetailPanelWidget {
             }
         }
 
-        int maxTitleWidth = width - (titleX - x) - PADDING;
+        int maxTitleWidth = width - (titleX - x) - OmniTheme.PADDING;
 
-        // Draw title
+        // Calculate tag dimensions first (needed for title truncation)
+        String displayTag = null;
+        int tagWidth = 0;
+        if (sourceMod != null) {
+            displayTag = "[" + sourceMod + "]";
+            int maxModWidth = width / 3;
+            tagWidth = font.width(displayTag) + 6;
+            if (font.width(displayTag) > maxModWidth) {
+                String truncatedMod = TextUtils.truncateWithEllipsis(font, sourceMod, maxModWidth - 6 - 2);
+                displayTag = "[" + truncatedMod + "]";
+                tagWidth = font.width(displayTag) + 6;
+                modTruncated = true;
+                originalModName = sourceMod;
+            }
+        }
+
+        // Truncate title
         String displayTitle = title;
         if (sourceMod != null) {
-            String tag = "[" + sourceMod + "]";
-            int tagWidth = font.width(tag) + 8;
-            // Reserve space for tag
-            int availTitleW = maxTitleWidth - tagWidth - PADDING;
+            int availTitleW = maxTitleWidth - tagWidth - OmniTheme.PADDING;
             if (font.width(title) > availTitleW && availTitleW > 20) {
-                displayTitle = font.plainSubstrByWidth(title, Math.max(10, availTitleW - 3)) + "...";
+                displayTitle = TextUtils.truncateWithEllipsis(font, title, availTitleW);
+                titleTruncated = true;
+                originalTitle = title;
             }
         } else {
             if (font.width(title) > maxTitleWidth) {
-                displayTitle = font.plainSubstrByWidth(title, Math.max(10, maxTitleWidth - 3)) + "...";
+                displayTitle = TextUtils.truncateWithEllipsis(font, title, maxTitleWidth);
+                titleTruncated = true;
+                originalTitle = title;
             }
         }
-        gui.drawString(font, displayTitle, titleX, titleY, OmniTheme.TEXT_HEADING_1, false);
 
-        // Track title click target (clickable → page source URL)
+        // Hover detection for title
+        titleHovered = mouseX >= titleX && mouseX <= titleX + font.width(displayTitle)
+                && mouseY >= titleY && mouseY <= titleY + font.lineHeight;
+        boolean titleClickable = page.url() != null && !page.url().isBlank();
+
+        // Draw title: brighter + underline when hovered and clickable
+        int titleColor = OmniTheme.TEXT_HEADING_1;
+        if (titleHovered && titleClickable) {
+            titleColor = OmniTheme.TEXT_WHITE;
+            gui.hLine(titleX, titleX + font.width(displayTitle) - 1, titleY + font.lineHeight, OmniTheme.TEXT_WHITE);
+        }
+        gui.drawString(font, displayTitle, titleX, titleY, titleColor, false);
+
         this.titleClickX = titleX;
         this.titleClickY = titleY;
         this.titleClickW = font.width(displayTitle);
         this.titleClickH = font.lineHeight;
-        this.titleUrl = page.url() != null && !page.url().isBlank() ? page.url() : null;
+        this.titleUrl = titleClickable ? page.url() : null;
 
-        // Source mod tag (clickable, to the right of title)
-        if (sourceMod != null) {
-            String tag = "[" + sourceMod + "]";
-            int tagStartX = titleX + font.width(displayTitle) + PADDING;
-            int tagWidth = font.width(tag) + 8;
-
-            // Tag background (vertically aligned with title text)
+        // Draw tag
+        if (displayTag != null) {
+            int tagStartX = x + width - OmniTheme.PADDING - tagWidth;
             int tagBgY = titleY - 1;
             int tagBgH = font.lineHeight + 2;
-            gui.fill(tagStartX, tagBgY, tagStartX + tagWidth, tagBgY + tagBgH, 0xFF2A2A4A);
 
-            // Tag text (blue link-style)
-            int tagTextX = tagStartX + 4;
-            gui.drawString(font, tag, tagTextX, titleY, OmniTheme.TEXT_LINK, false);
+            // Hover detection for tag
+            tagHovered = mouseX >= tagStartX && mouseX <= tagStartX + tagWidth
+                    && mouseY >= tagBgY && mouseY <= tagBgY + tagBgH;
 
-            // Underline (consistent with document links)
-            gui.hLine(tagTextX, tagTextX + font.width(tag) - 1, titleY + font.lineHeight - 1, OmniTheme.TEXT_LINK);
+            gui.fill(tagStartX, tagBgY, tagStartX + tagWidth, tagBgY + tagBgH, OmniTheme.CHIP_DETAIL_BG);
 
-            // Store click target
+            int tagTextX = tagStartX + 3;
+            int tagColor = OmniTheme.CHIP_DETAIL_TEXT;
+            if (tagHovered) {
+                tagColor = OmniTheme.TEXT_WHITE;
+                gui.hLine(tagTextX, tagTextX + font.width(displayTag) - 1, titleY + font.lineHeight, OmniTheme.TEXT_WHITE);
+            }
+            gui.drawString(font, displayTag, tagTextX, titleY, tagColor, false);
+
             this.tagX = tagStartX;
             this.tagY = tagBgY;
             this.tagW = tagWidth;
@@ -141,27 +178,23 @@ public class DetailPanelWidget {
             this.tagUrl = sourceModUrl;
         }
 
-        // ---- Content area ----
-        int contentX = x + PADDING;
-        int contentY = y + HEADER_HEIGHT + 1;
-        int contentWidth = width - PADDING * 2;
-        int contentHeight = (y + height) - contentY - PADDING;
-        gui.fill(contentX, contentY, contentX + contentWidth, contentY + contentHeight, OmniTheme.BG_CONTENT);
-    }
+        // Content area background
+        int contentY = y + OmniTheme.HEADER_HEIGHT + 1;
+        gui.fill(x + 1, contentY, x + width - 1, y + height, OmniTheme.BG_CONTENT);
 
-    private void drawBackButton(GuiGraphics gui, int x, int y, int width, int height) {
-        gui.hLine(x, x + width - 1, y, OmniTheme.TEXT_GRAY);
-        gui.hLine(x, x + width - 1, y + height - 1, OmniTheme.TEXT_GRAY);
-        gui.vLine(x, y, y + height - 1, OmniTheme.TEXT_GRAY);
-        gui.vLine(x + width - 1, y, y + height - 1, OmniTheme.TEXT_GRAY);
-        gui.drawString(font, "\u2190", x + 5, y + (height - font.lineHeight) / 2, OmniTheme.TEXT_BACK_BUTTON, false);
+        // Tooltips for truncated text
+        if (titleTruncated && titleHovered && originalTitle != null) {
+            gui.renderTooltip(font, Component.literal(originalTitle), mouseX, mouseY);
+        } else if (modTruncated && tagHovered && originalModName != null) {
+            gui.renderTooltip(font, Component.literal(originalModName), mouseX, mouseY);
+        }
     }
 
     public int[] getContentAreaBounds(int x, int y, int width, int height) {
-        int contentX = x + PADDING;
-        int contentY = y + HEADER_HEIGHT + 1;
-        int contentWidth = width - PADDING * 2;
-        int contentHeight = (y + height) - contentY - PADDING;
+        int contentX = x + OmniTheme.PADDING;
+        int contentY = y + OmniTheme.HEADER_HEIGHT + 1;
+        int contentWidth = width - OmniTheme.PADDING - OmniTheme.SCROLLBAR_WIDTH;
+        int contentHeight = (y + height) - contentY;
         return new int[]{contentX, contentY, contentWidth, contentHeight};
     }
 }

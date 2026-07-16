@@ -61,7 +61,7 @@ class SearchStateTest {
     @Test
     void withResults_returnsNewInstance() {
         var state = SearchState.initial();
-        var results = List.of(new SearchHit("item/123", "娜迦鳞片", "item", "暮色森林"));
+        var results = List.of(new SearchHit("item/123", "娜迦鳞片", "item", "暮色森林", null));
         var modified = state.withResults(results);
         assertNotSame(state, modified);
         assertTrue(state.results().isEmpty());
@@ -159,7 +159,7 @@ class SearchStateTest {
 
     @Test
     void multipleWithCalls_chainCorrectly() {
-        var results = List.of(new SearchHit("id1", "name1", "type1", "mod1"));
+        var results = List.of(new SearchHit("id1", "name1", "type1", "mod1", null));
         var doc = new Document("Title", null, null, List.of());
         var detail = new ItemPage("id1", "Title", "Mod", doc, "url");
 

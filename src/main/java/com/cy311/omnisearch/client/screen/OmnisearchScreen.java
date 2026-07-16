@@ -69,10 +69,10 @@ public class OmnisearchScreen extends Screen {
     protected void init() {
         super.init();
         debugLog("Screen init() called, width=" + width + " height=" + height);
-        imageManager = new ImageManager(imageDownloader != null ? imageDownloader : url -> null);
+        imageManager = new ImageManager(imageDownloader != null ? imageDownloader : url -> null, new com.cy311.omnisearch.data.client.RequestExecutor());
         int cx = (width - SBW) / 2;
         sb = new SearchBarWidget(font, cx, height / 3, SBW);
-        resultsPane = new SearchResultsPane(new ResultListWidget(font));
+        resultsPane = new SearchResultsPane(new ResultListWidget(font), font);
         detailPane = new DetailContentPane(new DetailPanelWidget(font), new com.cy311.omnisearch.client.render.document.DocumentRenderer(font, imageManager));
         cd = new CaptchaDialogWidget(font);
         // Captcha input EditBox (hidden until captcha is required)
@@ -103,7 +103,7 @@ public class OmnisearchScreen extends Screen {
             case DETAIL -> {
                 g.pose().pushPose();
                 slide.applyTransform(g, width);
-                renderDetailWindow(g, panelBounds);
+                renderDetailWindow(g, panelBounds, mx, my);
                 renderStatusBar(g, panelBounds, currentStatusMessage(), currentStatusColor());
                 g.pose().popPose();
             }
@@ -128,7 +128,7 @@ public class OmnisearchScreen extends Screen {
         renderStatusBar(g, panelBounds, currentStatusMessage(), currentStatusColor());
     }
 
-    private void renderDetailWindow(GuiGraphics g, FloatingSearchWindow.Bounds panelBounds) {
+    private void renderDetailWindow(GuiGraphics g, FloatingSearchWindow.Bounds panelBounds, int mx, int my) {
         int searchBarHeight = sb.getTotalHeight();
         floatingWindow.renderShell(g, width, height, panelBounds);
         int[] searchBounds = floatingWindow.getSearchBarBounds(panelBounds, searchBarHeight);
@@ -142,7 +142,7 @@ public class OmnisearchScreen extends Screen {
         }
 
         uiState = uiState.withDetail(
-            detailPane.render(g, uiState.detail(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3])
+            detailPane.render(g, uiState.detail(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], mx, my)
         );
     }
 
@@ -242,11 +242,21 @@ public class OmnisearchScreen extends Screen {
     public boolean keyPressed(int kc, int sc, int mod) {
         debugLog("keyPressed kc=" + kc + " focused=" + (sb != null ? sb.getEditBox().isFocused() : "null-sb"));
         if (kc == 256) { Minecraft.getInstance().setScreen(null); return true; }
-        if (kc == 292) { // F6 — clear cache and force refresh
+        if (kc == 292) { // F6 - clear all caches and reload current page
             repo.clearCache();
-            uiState = uiState.withDetail(uiState.detail().clearLayoutCache());
+            if (imageManager != null) {
+                imageManager.clearCache();
+            }
             clearCacheFlashTicks = 60;
-            OmnisearchMod.LOGGER.info("[OmniScreen] Cache cleared via F6");
+            OmnisearchMod.LOGGER.info("[OmniScreen] Cache cleared via F6, reloading current page");
+            // Reload current detail page from network if in detail view
+            if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL
+                    && uiState.search().selectedResultIndex() >= 0
+                    && uiState.search().selectedResultIndex() < uiState.search().results().size()) {
+                loadDetail(uiState.search().selectedResultIndex());
+            } else {
+                uiState = uiState.withDetail(uiState.detail().clearLayoutCache());
+            }
             return true;
         }
         if (kc == 257 || kc == 335) {
@@ -372,11 +382,11 @@ public class OmnisearchScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (uiState.search().currentView() == SearchSessionState.BodyView.RESULTS) {
-            uiState = uiState.withSearch(resultsPane.handleScroll(uiState.search(), scrollY));
+            uiState = uiState.withSearch(resultsPane.handleScroll(uiState.search(), scrollY, height));
             return true;
         }
         if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
-            uiState = uiState.withDetail(detailPane.handleScroll(uiState.detail(), scrollY));
+            uiState = uiState.withDetail(detailPane.handleScroll(uiState.detail(), scrollY, height));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);

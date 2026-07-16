@@ -62,66 +62,71 @@ class McmodHttpClientIntegrationTest {
 
     @Test
     void submitCaptcha_sendsCorrectPostBody() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String answerUrl = "http://localhost:" + port + "/captcha/verify";
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String answerUrl = "http://localhost:" + port + "/captcha/verify";
 
-        client.submitCaptcha(answerUrl, "42", null).get();
+            client.submitCaptcha(answerUrl, "42", null).get();
 
-        assertNotNull(capturedRequest);
-        assertEquals("POST", capturedRequest.method);
-        String body = capturedRequest.body;
-        assertTrue(body.contains("cc_captcha_answer=42"), "Body should contain cc_captcha_answer=42, got: " + body);
-        assertTrue(body.contains("cc_captcha_submit=1"), "Body should contain cc_captcha_submit=1, got: " + body);
+            assertNotNull(capturedRequest);
+            assertEquals("POST", capturedRequest.method);
+            String body = capturedRequest.body;
+            assertTrue(body.contains("cc_captcha_answer=42"), "Body should contain cc_captcha_answer=42, got: " + body);
+            assertTrue(body.contains("cc_captcha_submit=1"), "Body should contain cc_captcha_submit=1, got: " + body);
+        }
     }
 
     @Test
     void submitCaptcha_setsCorrectReferer() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String answerUrl = "http://localhost:" + port + "/captcha/verify";
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String answerUrl = "http://localhost:" + port + "/captcha/verify";
 
-        client.submitCaptcha(answerUrl, "3", null).get();
+            client.submitCaptcha(answerUrl, "3", null).get();
 
-        assertNotNull(capturedRequest);
-        String referer = capturedRequest.headers.getOrDefault("Referer", List.of()).stream().findFirst().orElse(null);
-        assertNotNull(referer, "Referer header should be present");
-        // The referer should be set to the answer URL for captcha submission
-        assertTrue(referer.contains("/captcha/verify"),
-            "Referer should contain the answer URL path, got: " + referer);
+            assertNotNull(capturedRequest);
+            String referer = capturedRequest.headers.getOrDefault("Referer", List.of()).stream().findFirst().orElse(null);
+            assertNotNull(referer, "Referer header should be present");
+            // The referer should be set to the answer URL for captcha submission
+            assertTrue(referer.contains("/captcha/verify"),
+                "Referer should contain the answer URL path, got: " + referer);
+        }
     }
 
     @Test
     void submitCaptcha_sendsUserAgent() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        client.submitCaptcha("http://localhost:" + port + "/submit", "1", null).get();
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.submitCaptcha("http://localhost:" + port + "/submit", "1", null).get();
 
-        assertNotNull(capturedRequest);
-        String ua = header("User-Agent");
-        assertNotNull(ua);
-        assertTrue(ua.contains("Chrome"), "User-Agent should contain Chrome, got: " + ua);
+            assertNotNull(capturedRequest);
+            String ua = header("User-Agent");
+            assertNotNull(ua);
+            assertTrue(ua.contains("Chrome"), "User-Agent should contain Chrome, got: " + ua);
+        }
     }
 
     @Test
     void submitCaptcha_sendsContentType() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        client.submitCaptcha("http://localhost:" + port + "/submit", "5", null).get();
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.submitCaptcha("http://localhost:" + port + "/submit", "5", null).get();
 
-        assertNotNull(capturedRequest);
-        String ct = header("Content-Type");
-        assertNotNull(ct);
-        assertTrue(ct.contains("application/x-www-form-urlencoded"));
+            assertNotNull(capturedRequest);
+            String ct = header("Content-Type");
+            assertNotNull(ct);
+            assertTrue(ct.contains("application/x-www-form-urlencoded"));
+        }
     }
 
     @Test
     void submitCaptcha_includesCookieHeaderWhenCookiesStored() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("session_id", "abc123"));
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("session_id", "abc123"));
 
-        client.submitCaptcha("http://localhost:" + port + "/submit", "7", null).get();
+            client.submitCaptcha("http://localhost:" + port + "/submit", "7", null).get();
 
-        assertNotNull(capturedRequest);
-        String cookie = header("Cookie");
-        assertNotNull(cookie, "Cookie header should be present when cookies are stored");
-        assertTrue(cookie.contains("session_id=abc123"), "Cookie should contain injected value, got: " + cookie);
+            assertNotNull(capturedRequest);
+            String cookie = header("Cookie");
+            assertNotNull(cookie, "Cookie header should be present when cookies are stored");
+            assertTrue(cookie.contains("session_id=abc123"), "Cookie should contain injected value, got: " + cookie);
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -144,18 +149,18 @@ class McmodHttpClientIntegrationTest {
         try {
             // Need to send a GET request first to get cookies set, then POST
             // But we can also just directly inject cookies
-            McmodHttpClient client = new McmodHttpClient();
+            try (McmodHttpClient client = new McmodHttpClient()) {
+                // GET request first should capture Set-Cookie
+                // HttpClient doesn't expose a direct GET method that handles cookies...
 
-            // GET request first should capture Set-Cookie
-            // HttpClient doesn't expose a direct GET method that handles cookies...
+                // For now, just test that injected cookies work
+                client.injectCookieStore(Map.of("stored", "value123"));
+                client.submitCaptcha("http://localhost:" + port + "/check-cookie", "9", null).get();
 
-            // For now, just test that injected cookies work
-            client.injectCookieStore(Map.of("stored", "value123"));
-            client.submitCaptcha("http://localhost:" + port + "/check-cookie", "9", null).get();
-
-            assertNotNull(capturedRequest);
-            String cookie = header("Cookie");
-            assertTrue(cookie.contains("stored=value123"));
+                assertNotNull(capturedRequest);
+                String cookie = header("Cookie");
+                assertTrue(cookie.contains("stored=value123"));
+            }
         } finally {
             cookieServer.stop(0);
         }

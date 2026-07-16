@@ -1,91 +1,130 @@
 package com.cy311.omnisearch.client.render;
 
+import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.Nullable;
 
-// verified: GuiGraphics fill/hLine/vLine signatures from lexxie.dev NeoForge 1.21.1 javadoc 2026-06-14
-// verified: EditBox constructor (Font, int, int, int, int, Component) from lexxie.dev NeoForge 1.21.1 2026-06-14
-// verified: Font width(String) from lexxie.dev NeoForge 1.21.1 javadoc 2026-06-14
-
 /**
- * Classic vanilla-style search bar.
- * <p>
- * Renders a stone-gray (#C6C6C6) panel with double border (white highlight + dark shadow),
- * containing a black EditBox input area.
+ * Vanilla-style search bar using EditBox's native bordered rendering.
+ * Supports a mod filter tag chip (e.g. "[暮色森林] ×") shown before the query text.
+ * The tag has an X button to clear the filter.
  */
 public class SearchBarWidget {
 
-    private static final int STONE_GRAY = 0xFFC6C6C6;
-    private static final int BORDER_DARK = 0xFF373737;
-    private static final int BORDER_WHITE = 0xFFFFFFFF;
-    private static final int BLACK_BG = 0xFF000000;
-    private static final int TEXT_WHITE = 0xFFFFFFFF;
-    private static final int PLACEHOLDER_GRAY = 0xFF808080;
-
-    private static final int PANEL_PADDING = 4;
-    private static final int BORDER_WIDTH = 1;
+    private static final int TAG_PADDING = 3;
+    private static final int X_SIZE = 10; // X button click area
 
     private final EditBox editBox;
+    private final Font font;
+
+    // Cached tag layout for click detection
+    private int cachedTagX = 0;
+    private int cachedTagWidth = 0;
+    private int cachedXButtonX = 0;
+    private int cachedEditBoxX = 0;
+    private int cachedEditBoxWidth = 0;
 
     public SearchBarWidget(Font font, int x, int y, int width) {
-        int innerX = x + PANEL_PADDING + BORDER_WIDTH;
-        int innerY = y + PANEL_PADDING + BORDER_WIDTH;
-        int innerWidth = width - (PANEL_PADDING + BORDER_WIDTH) * 2;
-
-        // EditBox renders internally but its styling is overwritten by our panel.
-        // The edit box needs height; we use font.lineHeight + 4 for single-line input.
-        this.editBox = new EditBox(font, innerX, innerY, innerWidth, font.lineHeight + 4, Component.empty());
-        this.editBox.setTextColor(TEXT_WHITE);
-        this.editBox.setBordered(false);
-        this.editBox.setHint(Component.literal("搜索MC百科...").withColor(PLACEHOLDER_GRAY));
+        this.font = font;
+        int height = font.lineHeight + 6;
+        this.editBox = new EditBox(font, x, y, width, height, Component.empty());
+        this.editBox.setTextColor(OmniTheme.TEXT_WHITE);
+        this.editBox.setBordered(true);
+        this.editBox.setHint(Component.literal("搜索MC百科...").withColor(OmniTheme.TEXT_PLACEHOLDER));
+        this.editBox.setMaxLength(256);
     }
 
-    /**
-     * Renders the search bar.
-     *
-     * @param gui   the GuiGraphics instance
-     * @param x     left edge of the search bar panel
-     * @param y     top edge of the search bar panel
-     * @param width total width of the search bar panel
-     * @param query the current query string
-     */
-    public void render(GuiGraphics gui, int x, int y, int width, @Nullable String query) {
-        int height = editBox.getHeight() + (PANEL_PADDING + BORDER_WIDTH) * 2;
+    public void render(GuiGraphics gui, int x, int y, int width, @Nullable String query, @Nullable String modFilter, int mouseX, int mouseY) {
+        int h = editBox.getHeight();
 
-        // ---- Outer background (stone gray) ----
-        gui.fill(x, y, x + width, y + height, STONE_GRAY); // verified: fill(int,int,int,int,int) from lexxie.dev javadoc 2026-06-14
+        // Calculate tag layout
+        int tagTotalWidth = 0;
+        String tagText = null;
+        int tagTextWidth = 0;
+        if (modFilter != null && !modFilter.isEmpty()) {
+            tagText = modFilter;
+            tagTextWidth = font.width(tagText);
+            tagTotalWidth = TAG_PADDING + tagTextWidth + 3 + X_SIZE + TAG_PADDING;
+        }
 
-        // ---- Double border (classic vanilla style) ----
-        // Outer layer: white highlight on top/left, dark shadow on bottom/right
-        gui.hLine(x, x + width - 1, y, BORDER_WHITE);
-        gui.vLine(x, y, y + height - 1, BORDER_WHITE);
-        gui.hLine(x, x + width - 1, y + height - 1, BORDER_DARK);
-        gui.vLine(x + width - 1, y, y + height - 1, BORDER_DARK);
+        // Position the edit box after the tag
+        int editBoxX = x;
+        int editBoxWidth = width;
+        if (tagTotalWidth > 0) {
+            editBoxX = x + tagTotalWidth + OmniTheme.PADDING;
+            editBoxWidth = width - tagTotalWidth - OmniTheme.PADDING;
+        }
 
-        // Inner layer: dark on top/left, white on bottom/right (reversed shading)
-        gui.hLine(x + 1, x + width - 2, y + 1, BORDER_DARK);
-        gui.vLine(x + 1, y + 1, y + height - 2, BORDER_DARK);
-        gui.hLine(x + 1, x + width - 2, y + height - 2, BORDER_WHITE);
-        gui.vLine(x + width - 2, y + 1, y + height - 2, BORDER_WHITE);
+        // Draw background for the full bar area
+        gui.fill(x, y, x + width, y + h, OmniTheme.BG_CONTENT);
 
-        // ---- Inner edit box background (black) ----
-        int innerX = x + PANEL_PADDING + BORDER_WIDTH;
-        int innerY = y + PANEL_PADDING + BORDER_WIDTH;
-        int innerW = width - (PANEL_PADDING + BORDER_WIDTH) * 2;
-        int innerH = editBox.getHeight();
-        gui.fill(innerX, innerY, innerX + innerW, innerY + innerH, BLACK_BG);
-
-        // ---- Update and render EditBox ----
-        // Sync position in case x/y changed
-        editBox.setX(innerX);
-        editBox.setY(innerY);
+        // Configure and render edit box
+        editBox.setX(editBoxX);
+        editBox.setY(y);
+        editBox.setWidth(editBoxWidth);
         if (query != null && !query.equals(editBox.getValue())) {
             editBox.setValue(query);
         }
-        editBox.render(gui, 0, 0, 0); // verified: EditBox.render(GuiGraphics,int,int,float) from lexxie.dev 1.21.1 2026-06-14
+        editBox.render(gui, 0, 0, 0);
+
+        // Draw tag chip
+        if (tagText != null) {
+            int tagX = x;
+            int tagY = y;
+            int tagH = h;
+            int tagW = tagTotalWidth;
+
+            // Background
+            gui.fill(tagX, tagY + 1, tagX + tagW, tagY + tagH - 1, OmniTheme.CHIP_MOD_BG);
+            // Border
+            gui.hLine(tagX, tagX + tagW - 1, tagY + 1, OmniTheme.CHIP_MOD_BORDER);
+            gui.hLine(tagX, tagX + tagW - 1, tagY + tagH - 1, OmniTheme.CHIP_MOD_BORDER);
+            gui.vLine(tagX, tagY + 1, tagY + tagH - 1, OmniTheme.CHIP_MOD_BORDER);
+            gui.vLine(tagX + tagW - 1, tagY + 1, tagY + tagH - 1, OmniTheme.CHIP_MOD_BORDER);
+
+            // Tag text
+            int textY = tagY + (tagH - font.lineHeight) / 2;
+            gui.drawString(font, tagText, tagX + TAG_PADDING, textY, OmniTheme.CHIP_MOD_TEXT, false);
+
+            // X button
+            int xBtnX = tagX + TAG_PADDING + tagTextWidth + 3;
+            int xBtnY = tagY + (tagH - X_SIZE) / 2;
+            boolean xHovered = mouseX >= xBtnX && mouseX <= xBtnX + X_SIZE
+                    && mouseY >= xBtnY && mouseY <= xBtnY + X_SIZE;
+            int xColor = xHovered ? OmniTheme.TEXT_WHITE : OmniTheme.TEXT_GRAY;
+            // Draw "×" character (offset +1 for visual centering of this glyph)
+            int xTextY = tagY + (tagH - font.lineHeight) / 2 + 1;
+            gui.drawString(font, "\u00D7", xBtnX + 2, xTextY, xColor, false);
+
+            // Cache for click detection
+            cachedTagX = tagX;
+            cachedTagWidth = tagW;
+            cachedXButtonX = xBtnX;
+            cachedEditBoxX = editBoxX;
+            cachedEditBoxWidth = editBoxWidth;
+        } else {
+            cachedTagWidth = 0;
+        }
+    }
+
+    /**
+     * Legacy render without mod filter.
+     */
+    public void render(GuiGraphics gui, int x, int y, int width, @Nullable String query) {
+        render(gui, x, y, width, query, null, 0, 0);
+    }
+
+    /**
+     * Checks if a click at (mouseX, mouseY) falls within the X button of the mod filter tag.
+     */
+    public boolean isXButtonClicked(int mouseX, int mouseY, int barY) {
+        if (cachedTagWidth == 0) return false;
+        int xBtnY = barY + (editBox.getHeight() - X_SIZE) / 2;
+        return mouseX >= cachedXButtonX && mouseX <= cachedXButtonX + X_SIZE
+                && mouseY >= xBtnY && mouseY <= xBtnY + X_SIZE;
     }
 
     public EditBox getEditBox() {
@@ -93,6 +132,6 @@ public class SearchBarWidget {
     }
 
     public int getTotalHeight() {
-        return editBox.getHeight() + (PANEL_PADDING + BORDER_WIDTH) * 2;
+        return editBox.getHeight();
     }
 }

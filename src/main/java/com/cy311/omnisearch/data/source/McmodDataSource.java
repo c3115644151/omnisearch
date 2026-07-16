@@ -22,7 +22,7 @@ import java.io.PrintWriter;
  * <p>
  * Uses constructor injection for testability.
  */
-public class McmodDataSource implements CaptchaCapableDataSource {
+public class McmodDataSource implements CaptchaCapableDataSource, AutoCloseable {
 
     private static final String BASE_URL = "https://www.mcmod.cn";
 
@@ -66,6 +66,21 @@ public class McmodDataSource implements CaptchaCapableDataSource {
             .thenApply(html -> {
                 if (html.isBlank()) return List.<SearchHit>of();
                 checkCaptcha(html, McmodHttpClient.buildSearchUrl(query.text()));
+                return parser.parseSearchResults(html);
+            });
+    }
+
+    /**
+     * Fetches a specific page of search results (page 2+, for pagination).
+     */
+    public CompletableFuture<List<SearchHit>> searchMore(SearchQuery query, int page) {
+        if (query == null || query.text() == null || query.text().isBlank() || page < 2) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return client.search(query.text(), page)
+            .thenApply(html -> {
+                if (html.isBlank()) return List.<SearchHit>of();
+                checkCaptcha(html, McmodHttpClient.buildSearchUrl(query.text(), page));
                 return parser.parseSearchResults(html);
             });
     }
@@ -212,5 +227,16 @@ public class McmodDataSource implements CaptchaCapableDataSource {
     @Override
     public boolean isAvailable() {
         return true;
+    }
+
+    @Override
+    public void close() {
+        if (client instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                // Ignore close errors
+            }
+        }
     }
 }

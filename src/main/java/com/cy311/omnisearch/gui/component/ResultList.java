@@ -2,6 +2,7 @@ package com.cy311.omnisearch.gui.component;
 
 import com.cy311.omnisearch.client.render.ResultListWidget;
 import com.cy311.omnisearch.data.model.SearchHit;
+import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import java.util.List;
@@ -30,7 +31,7 @@ public class ResultList implements UIComponent {
 
     @Override
     public void render(GuiGraphics g, int mx, int my, float delta) {
-        widget.render(g, x, y, w, h, items, selectedIndex, scrollOffset, mx, my);
+        widget.render(g, x, y, w, h, items, selectedIndex, scrollOffset, mx, my, x + w - OmniTheme.SCROLLBAR_WIDTH);
     }
 
     @Override

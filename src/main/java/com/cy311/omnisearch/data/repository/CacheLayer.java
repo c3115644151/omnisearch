@@ -19,7 +19,7 @@ import java.util.List;
 
 public class CacheLayer {
     // Cache schema version — increment when parser/layout changes to invalidate old caches
-    static final int CACHE_VERSION = 3;
+    static final int CACHE_VERSION = 7;
 
     // TTL configuration (milliseconds)
     private static final long SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000L;   // 7 days

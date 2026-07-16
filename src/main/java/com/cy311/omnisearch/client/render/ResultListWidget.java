@@ -4,166 +4,203 @@ import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import java.util.List;
 
-// verified: GuiGraphics fill/hLine/vLine signatures from lexxie.dev NeoForge 1.21.1 javadoc 2026-06-14
-// verified: Font.width(String) from lexxie.dev NeoForge 1.21.1 2026-06-14
-
 /**
- * Dark-background result list with scrolling, styled after MC container inventories.
- * <p>
- * Each row displays: 16x16 icon placeholder + item name + source mod (gray).
- * Hovered/selected rows are highlighted with a white dashed-style border.
+ * Dark-background result list with scrolling.
+ * Each row displays: [category] name ... sourceMod (gray, right-aligned).
+ * Hovered/selected rows are highlighted.
+ * Source mod is truncated if too long; full text shown via tooltip on hover.
  */
 public class ResultListWidget {
 
-    private static final int ICON_COLOR = 0xFF4A6EA8;
-    private static final int ICON_SIZE = 16;
-    private static final int ROW_HEIGHT = 20;
-    private static final int ROW_PADDING_X = 4;
-    private static final int ROW_PADDING_Y = 2;
-    private static final int TEXT_ICON_GAP = 4;
+    private static final int MOD_MAX_RATIO = 3; // source mod max width = contentWidth / 3
 
     private final Font font;
+    private final ScrollbarWidget scrollbar = new ScrollbarWidget();
 
     public ResultListWidget(Font font) {
         this.font = font;
     }
 
-    /**
-     * Renders the result list.
-     *
-     * @param gui           the GuiGraphics instance
-     * @param x             left edge of the list area
-     * @param y             top edge of the list area
-     * @param width         width of the list area
-     * @param height        height of the list area
-     * @param results       search results to display
-     * @param selectedIndex index of the currently selected row, or -1 if none
-     * @param scrollOffset  number of rows scrolled past the top
-     * @param mouseX        current mouse X position for hover detection
-     * @param mouseY        current mouse Y position for hover detection
-     * @return the total rendered height of the list content
-     */
     public int render(GuiGraphics gui, int x, int y, int width, int height,
                       List<SearchHit> results, int selectedIndex, int scrollOffset,
-                      int mouseX, int mouseY) {
+                      int mouseX, int mouseY, int contentRightX) {
 
-        // ---- Background ----
         gui.fill(x, y, x + width, y + height, OmniTheme.BG_DARK);
 
-        // ---- Inner double border ----
-        // Top and left: dark (inner shadow)
-        gui.hLine(x, x + width - 1, y, OmniTheme.BORDER);
-        gui.vLine(x, y, y + height - 1, OmniTheme.BORDER);
-        // Bottom and right: light (inner highlight)
-        gui.hLine(x, x + width - 1, y + height - 1, OmniTheme.TEXT_GRAY);
-        gui.vLine(x + width - 1, y, y + height - 1, OmniTheme.TEXT_GRAY);
+        gui.hLine(x, x + width - 1, y, OmniTheme.BORDER_LIGHT);
+        gui.vLine(x, y, y + height - 1, OmniTheme.BORDER_LIGHT);
+        gui.hLine(x, x + width - 1, y + height - 1, OmniTheme.BORDER);
+        gui.vLine(x + width - 1, y, y + height - 1, OmniTheme.BORDER);
 
-        // ---- Clip region for scrolling ----
         int contentX = x + 1;
         int contentY = y + 1;
         int contentWidth = width - 2 - OmniTheme.SCROLLBAR_WIDTH;
         int contentHeight = height - 2;
 
-        gui.enableScissor(contentX, contentY, contentX + contentWidth, contentY + contentHeight); // verified: enableScissor(int,int,int,int) from lexxie.dev 2026-06-14
+        gui.enableScissor(contentX, contentY, contentX + contentWidth, contentY + contentHeight);
 
-        // ---- Render visible rows ----
-        int visibleRows = contentHeight / ROW_HEIGHT;
+        int visibleRows = contentHeight / OmniTheme.LIST_ITEM_HEIGHT;
         int startRow = Math.max(0, scrollOffset);
         int endRow = Math.min(results.size(), startRow + visibleRows + 1);
 
+        String hoveredTooltipText = null;
+        int hoveredTooltipX = 0;
+        int hoveredTooltipY = 0;
+
         for (int i = startRow; i < endRow; i++) {
-            int rowY = contentY + (i - scrollOffset) * ROW_HEIGHT;
-            if (rowY + ROW_HEIGHT < contentY || rowY > contentY + contentHeight) {
-                continue;
-            }
+            int rowY = contentY + (i - scrollOffset) * OmniTheme.LIST_ITEM_HEIGHT;
+            if (rowY + OmniTheme.LIST_ITEM_HEIGHT < contentY || rowY > contentY + contentHeight) continue;
 
             SearchHit hit = results.get(i);
             boolean isSelected = (i == selectedIndex);
 
-            // ---- Hover effect ----
-            if (mouseY >= rowY && mouseY < rowY + ROW_HEIGHT) {
-                gui.fill(contentX, rowY, contentX + contentWidth, rowY + ROW_HEIGHT, OmniTheme.BG_HOVER);
+            // Hover effect - only when mouseX is within content area
+            boolean rowHovered = mouseX >= contentX && mouseX <= contentRightX
+                    && mouseY >= rowY && mouseY < rowY + OmniTheme.LIST_ITEM_HEIGHT;
+            if (rowHovered) {
+                gui.fill(contentX, rowY, contentX + contentWidth, rowY + OmniTheme.LIST_ITEM_HEIGHT, OmniTheme.BG_HOVER);
             }
 
-            // ---- Row highlight (white dashed-style border) ----
+            // Selection highlight border
             if (isSelected) {
-                drawHighlightBorder(gui, contentX, rowY, contentWidth, ROW_HEIGHT);
+                gui.hLine(contentX, contentX + contentWidth - 1, rowY, OmniTheme.TEXT_WHITE);
+                gui.hLine(contentX, contentX + contentWidth - 1, rowY + OmniTheme.LIST_ITEM_HEIGHT - 1, OmniTheme.TEXT_WHITE);
+                gui.vLine(contentX, rowY, rowY + OmniTheme.LIST_ITEM_HEIGHT - 1, OmniTheme.TEXT_WHITE);
+                gui.vLine(contentX + contentWidth - 1, rowY, rowY + OmniTheme.LIST_ITEM_HEIGHT - 1, OmniTheme.TEXT_WHITE);
             }
 
-            // ---- Icon with first character ----
-            int iconX = contentX + ROW_PADDING_X;
-            int iconY = rowY + ROW_PADDING_Y;
-            // Background circle/square
-            gui.fill(iconX, iconY, iconX + ICON_SIZE, iconY + ICON_SIZE, ICON_COLOR);
-            // First character of item name
-            String name = hit.name();
-            String firstChar = (name != null && !name.isEmpty())
-                ? name.substring(0, 1) : "?";
-            int charW = font.width(firstChar);
-            int charX = iconX + (ICON_SIZE - charW) / 2;
-            int charY = iconY + (ICON_SIZE - font.lineHeight) / 2;
-            gui.drawString(font, firstChar, charX, charY, OmniTheme.TEXT_WHITE, false);
+            // Category tag prefix from parsed search result
+            String tagText = hit.category();
+            if (tagText != null && !tagText.isEmpty()) {
+                tagText = "(" + tagText + ")";
+            }
 
-            // ---- Name text ----
-            int textX = iconX + ICON_SIZE + TEXT_ICON_GAP;
-            int textY = rowY + (ROW_HEIGHT - font.lineHeight) / 2;
-            gui.drawString(font, hit.name(), textX, textY, OmniTheme.TEXT_WHITE, false); // verified: drawString(Font,String,int,int,int,boolean) from lexxie.dev 2026-06-14
+            int textX = contentX + OmniTheme.ROW_PADDING_X;
+            int textY = rowY + (OmniTheme.LIST_ITEM_HEIGHT - font.lineHeight) / 2;
+            int rightEdge = contentX + contentWidth - OmniTheme.ROW_PADDING_X;
 
-            // ---- Source mod text (gray, right-aligned) ----
+            // Source mod (right-aligned) - truncate mod name, not item name
             String sourceText = hit.sourceMod();
-            int sourceWidth = font.width(sourceText);
-            int sourceX = contentX + contentWidth - ROW_PADDING_X - sourceWidth;
-            gui.drawString(font, sourceText, sourceX, textY, OmniTheme.TEXT_GRAY, false);
+            boolean sourceTruncated = false;
+            int sourceWidth = 0;
+            int maxModWidth = contentWidth / MOD_MAX_RATIO;
+
+            if (sourceText != null && !sourceText.isEmpty()) {
+                sourceWidth = font.width(sourceText);
+                if (sourceWidth > maxModWidth) {
+                    sourceText = TextUtils.truncateWithEllipsis(font, sourceText, maxModWidth);
+                    sourceWidth = font.width(sourceText);
+                    sourceTruncated = true;
+                }
+            }
+
+            // Draw category tag (left, gray) - cap at 30% of content width
+            if (tagText != null) {
+                int maxTagWidth = contentWidth * 3 / 10;
+                if (font.width(tagText) > maxTagWidth) {
+                    tagText = TextUtils.truncateWithEllipsis(font, tagText, maxTagWidth);
+                }
+                gui.drawString(font, tagText, textX, textY, OmniTheme.TEXT_GRAY, false);
+                textX += font.width(tagText) + 3;
+            }
+
+            // Name (after tag, white) - takes all remaining space before source mod
+            String name = hit.name();
+            int nameAreaEnd = rightEdge - (sourceWidth > 0 ? sourceWidth + 6 : 0);
+            int nameMaxWidth = nameAreaEnd - textX;
+            boolean nameTruncated = false;
+            int nameDrawX = textX;
+            if (nameMaxWidth > 0 && font.width(name) > nameMaxWidth) {
+                name = TextUtils.truncateWithEllipsis(font, name, nameMaxWidth);
+                nameTruncated = true;
+            }
+            if (nameMaxWidth > 0) {
+                gui.drawString(font, name, nameDrawX, textY, OmniTheme.TEXT_WHITE, false);
+            }
+
+            // Track hovered truncated name for tooltip
+            if (nameTruncated && rowHovered
+                    && mouseX >= nameDrawX && mouseX <= nameDrawX + font.width(name)) {
+                hoveredTooltipText = hit.name();
+                hoveredTooltipX = mouseX;
+                hoveredTooltipY = mouseY;
+            }
+
+            // Source mod (right-aligned, gray) - underline when hovered to indicate clickable
+            if (sourceWidth > 0) {
+                int sourceX = rightEdge - sourceWidth;
+                int sourceColor = OmniTheme.TEXT_GRAY;
+                if (rowHovered && mouseX >= sourceX && mouseX <= sourceX + sourceWidth) {
+                    // Hovered mod name: brighter color + underline to indicate clickable
+                    sourceColor = OmniTheme.TEXT_WHITE;
+                    gui.hLine(sourceX, sourceX + sourceWidth - 1, textY + font.lineHeight, OmniTheme.TEXT_WHITE);
+                }
+                gui.drawString(font, sourceText, sourceX, textY, sourceColor, false);
+
+                // Track hovered truncated source mod for tooltip
+                if (sourceTruncated && rowHovered
+                        && mouseX >= sourceX && mouseX <= sourceX + sourceWidth) {
+                    hoveredTooltipText = hit.sourceMod();
+                    hoveredTooltipX = mouseX;
+                    hoveredTooltipY = mouseY;
+                }
+            }
         }
 
-        gui.disableScissor(); // verified: disableScissor() from lexxie.dev 2026-06-14
+        gui.disableScissor();
 
-        // ---- Scrollbar ----
-        drawScrollbar(gui, x + width - OmniTheme.SCROLLBAR_WIDTH, y + 1, OmniTheme.SCROLLBAR_WIDTH, height - 2,
-                results.size(), visibleRows, scrollOffset);
+        // Render tooltip for truncated text
+        if (hoveredTooltipText != null) {
+            gui.renderTooltip(font, Component.literal(hoveredTooltipText), hoveredTooltipX, hoveredTooltipY);
+        }
 
-        return results.size() * ROW_HEIGHT;
+        // Scrollbar
+        if (results.size() > visibleRows) {
+            float ratio = (float) visibleRows / results.size();
+            float frac = (float) scrollOffset / Math.max(1, results.size() - visibleRows);
+            scrollbar.render(gui, x + width - OmniTheme.SCROLLBAR_WIDTH, y + 1, height - 2, frac, ratio);
+        }
+
+        return results.size() * OmniTheme.LIST_ITEM_HEIGHT;
     }
 
-    private void drawHighlightBorder(GuiGraphics gui, int x, int y, int width, int height) {
-        // Draw a white dashed-style highlight using hLine/vLine
-        gui.hLine(x, x + width - 1, y, OmniTheme.TEXT_WHITE);
-        gui.hLine(x, x + width - 1, y + height - 1, OmniTheme.TEXT_WHITE);
-        gui.vLine(x, y, y + height - 1, OmniTheme.TEXT_WHITE);
-        gui.vLine(x + width - 1, y, y + height - 1, OmniTheme.TEXT_WHITE);
-    }
-
-    private void drawScrollbar(GuiGraphics gui, int x, int y, int width, int height,
-                               int totalRows, int visibleRows, int scrollOffset) {
-        if (totalRows <= 0) return;
-
-        // Background track
-        gui.fill(x, y, x + width, y + height, OmniTheme.BG_SCROLLBAR_TRACK);
-
-        // Thumb (sliding indicator)
-        float thumbRatio = Math.min(1.0f, (float) visibleRows / totalRows);
-        int thumbHeight = Math.max(8, (int) (height * thumbRatio));
-        float scrollMax = Math.max(1, totalRows - visibleRows);
-        float scrollFraction = (float) scrollOffset / scrollMax;
-        int thumbY = y + (int) ((height - thumbHeight) * scrollFraction);
-
-        gui.fill(x + 1, thumbY, x + width - 1, thumbY + thumbHeight, OmniTheme.BG_SCROLLBAR_THUMB);
-    }
-
-    /**
-     * Returns the row index at the given mouse Y position relative to the list area.
-     *
-     * @param mouseY       mouse Y in screen coordinates
-     * @param listY        top edge of the list area
-     * @param scrollOffset current scroll offset
-     * @return row index, or -1 if outside the list
-     */
     public int getRowAt(int mouseY, int listY, int scrollOffset) {
         int relativeY = mouseY - listY - 1;
         if (relativeY < 0) return -1;
-        int row = relativeY / ROW_HEIGHT + scrollOffset;
-        return row;
+        return relativeY / OmniTheme.LIST_ITEM_HEIGHT + scrollOffset;
+    }
+
+    /**
+     * Checks if a click at (mouseX, mouseY) falls within the source mod text area of any row.
+     * Returns the sourceMod string if the click is on a mod name, null otherwise.
+     */
+    public String getModNameAt(int mouseX, int mouseY, int listX, int listY, int listWidth,
+                               List<SearchHit> results, int scrollOffset) {
+        int contentX = listX + 1;
+        int contentWidth = listWidth - 2 - OmniTheme.SCROLLBAR_WIDTH;
+        int rightEdge = contentX + contentWidth - OmniTheme.ROW_PADDING_X;
+        int maxModWidth = contentWidth / MOD_MAX_RATIO;
+
+        int row = getRowAt(mouseY, listY, scrollOffset);
+        if (row < 0 || row >= results.size()) return null;
+
+        SearchHit hit = results.get(row);
+        String sourceText = hit.sourceMod();
+        if (sourceText == null || sourceText.isEmpty()) return null;
+
+        int sourceWidth = font.width(sourceText);
+        if (sourceWidth > maxModWidth) {
+            sourceText = TextUtils.truncateWithEllipsis(font, sourceText, maxModWidth);
+            sourceWidth = font.width(sourceText);
+        }
+
+        int sourceX = rightEdge - sourceWidth;
+        if (mouseX >= sourceX && mouseX <= sourceX + sourceWidth) {
+            return hit.sourceMod();
+        }
+        return null;
     }
 }

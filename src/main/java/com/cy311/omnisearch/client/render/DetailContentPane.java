@@ -13,19 +13,20 @@ public final class DetailContentPane {
 
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;
+    private final ScrollbarWidget scrollbar = new ScrollbarWidget();
 
     public DetailContentPane(DetailPanelWidget panelWidget, DocumentRenderer documentRenderer) {
         this.panelWidget = panelWidget;
         this.documentRenderer = documentRenderer;
     }
 
-    public DetailViewState render(GuiGraphics gui, DetailViewState state, int x, int y, int width, int height) {
+    public DetailViewState render(GuiGraphics gui, DetailViewState state, int x, int y, int width, int height, int mouseX, int mouseY) {
         if (state.page() == null) {
             gui.fill(x, y, x + width, y + height, OmniTheme.BG_CONTENT);
             return state.withDraggingScrollbar(false);
         }
 
-        panelWidget.render(gui, x, y, width, height, state.page());
+        panelWidget.render(gui, x, y, width, height, state.page(), mouseX, mouseY);
         int[] contentArea = panelWidget.getContentAreaBounds(x, y, width, height);
         DetailViewState nextState = ensureLayout(state, contentArea[2]);
         int scrollOffset = Math.max(0, nextState.scrollOffset());
@@ -34,7 +35,7 @@ public final class DetailContentPane {
         }
 
         gui.enableScissor(contentArea[0], contentArea[1], contentArea[0] + contentArea[2], contentArea[1] + contentArea[3]);
-        documentRenderer.paint(gui, nextState.cachedLayout(), contentArea[0], contentArea[1] - nextState.scrollOffset());
+        documentRenderer.paint(gui, nextState.cachedLayout(), contentArea[0], contentArea[1] - nextState.scrollOffset(), mouseX, mouseY);
         gui.disableScissor();
 
         nextState = nextState.withContentHeight(nextState.cachedLayout().height());
@@ -52,9 +53,9 @@ public final class DetailContentPane {
             return ClickResult.notHandled(state);
         }
         int[] contentArea = panelWidget.getContentAreaBounds(x, y, width, height);
-        int backX = x + 6;
-        int backY = y + 4;
-        if (mx >= backX && mx <= backX + 18 && my >= backY && my <= backY + 18) {
+        int backX = x + OmniTheme.PADDING;
+        int backY = y + (OmniTheme.HEADER_HEIGHT - OmniTheme.BACK_BUTTON_SIZE) / 2;
+        if (mx >= backX && mx <= backX + OmniTheme.BACK_BUTTON_SIZE && my >= backY && my <= backY + OmniTheme.BACK_BUTTON_SIZE) {
             return new ClickResult(true, true, null, state.withDraggingScrollbar(false));
         }
         if (panelWidget.getTitleUrl() != null) {
@@ -78,9 +79,16 @@ public final class DetailContentPane {
                 return new ClickResult(true, false, link.url(), state.withDraggingScrollbar(false));
             }
         }
-        int scrollbarX = contentArea[0] + contentArea[2] - OmniTheme.SCROLLBAR_WIDTH;
+        int scrollbarX = contentArea[0] + contentArea[2];
         if (mx >= scrollbarX && mx <= scrollbarX + OmniTheme.SCROLLBAR_WIDTH
                 && my >= contentArea[1] && my <= contentArea[1] + contentArea[3]) {
+            int maxScroll = Math.max(0, state.contentHeight() - contentArea[3]);
+            if (maxScroll > 0) {
+                float thumbRatio = (float) contentArea[3] / Math.max(1, state.contentHeight());
+                float frac = scrollbar.clickToFraction((int) my, contentArea[1], contentArea[3], thumbRatio);
+                int newOffset = Math.round(frac * maxScroll);
+                return new ClickResult(true, false, null, state.withScrollOffset(newOffset).withDraggingScrollbar(true));
+            }
             return new ClickResult(true, false, null, state.withDraggingScrollbar(true));
         }
         return ClickResult.notHandled(state.withDraggingScrollbar(false));
@@ -92,15 +100,16 @@ public final class DetailContentPane {
         }
         int[] contentArea = panelWidget.getContentAreaBounds(x, y, width, height);
         int maxScroll = Math.max(1, state.contentHeight() - contentArea[3]);
-        float thumbRatio = Math.min(1f, (float) contentArea[3] / Math.max(1, state.contentHeight()));
-        int thumbHeight = Math.max(8, (int) (contentArea[3] * thumbRatio));
-        float fraction = (float) (my - contentArea[1]) / Math.max(1, contentArea[3] - thumbHeight);
-        fraction = Math.max(0, Math.min(1, fraction));
-        return state.withScrollOffset((int) (fraction * maxScroll));
+        float thumbRatio = (float) contentArea[3] / Math.max(1, state.contentHeight());
+        float frac = scrollbar.clickToFraction((int) my, contentArea[1], contentArea[3], thumbRatio);
+        return state.withScrollOffset(Math.round(frac * maxScroll));
     }
 
-    public DetailViewState handleScroll(DetailViewState state, double scrollY) {
-        return state.withScrollOffset(state.scrollOffset() - (int) Math.round(scrollY) * 20);
+    public DetailViewState handleScroll(DetailViewState state, double scrollY, int contentHeight) {
+        int maxScroll = Math.max(0, state.contentHeight() - contentHeight);
+        int newOffset = state.scrollOffset() - (int) Math.round(scrollY) * OmniTheme.SCROLL_STEP;
+        int clamped = Math.max(0, Math.min(newOffset, maxScroll));
+        return state.withScrollOffset(clamped);
     }
 
     public DetailViewState stopDragging(DetailViewState state) {
@@ -120,13 +129,11 @@ public final class DetailContentPane {
     }
 
     private void drawScrollbar(GuiGraphics gui, DetailViewState state, int[] contentArea, int maxScroll) {
-        int sx = contentArea[0] + contentArea[2] - OmniTheme.SCROLLBAR_WIDTH;
-        gui.fill(sx, contentArea[1], sx + OmniTheme.SCROLLBAR_WIDTH, contentArea[1] + contentArea[3], OmniTheme.BG_SCROLLBAR_TRACK);
-        float thumbRatio = Math.min(1f, (float) contentArea[3] / Math.max(1, state.contentHeight()));
-        int thumbH = Math.max(8, (int) (contentArea[3] * thumbRatio));
+        // Align scrollbar to the right edge of the panel (same as ResultListWidget)
+        int sx = contentArea[0] + contentArea[2];
+        float ratio = (float) contentArea[3] / Math.max(1, state.contentHeight());
         float frac = (float) state.scrollOffset() / Math.max(1, maxScroll);
-        int thumbY = contentArea[1] + (int) ((contentArea[3] - thumbH) * Math.min(1, Math.max(0, frac)));
-        gui.fill(sx + 1, thumbY, sx + OmniTheme.SCROLLBAR_WIDTH - 1, thumbY + thumbH, OmniTheme.BG_SCROLLBAR_THUMB);
+        scrollbar.render(gui, sx, contentArea[1], contentArea[3], frac, ratio);
     }
 
     public record ClickResult(boolean handled, boolean goBack, @Nullable String openUrl, DetailViewState state) {

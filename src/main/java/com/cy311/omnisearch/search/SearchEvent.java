@@ -8,6 +8,8 @@ public sealed interface SearchEvent {
     record QueryChanged(String query) implements SearchEvent {}
     record SearchSubmitted() implements SearchEvent {}
     record SearchResultsLoaded(List<SearchHit> results) implements SearchEvent {}
+    record MoreResultsLoaded(List<SearchHit> results) implements SearchEvent {}
+    record ModFilterSelected(String modName) implements SearchEvent {}
     record ResultSelected(int index) implements SearchEvent {}
     record DetailLoaded(ItemPage page) implements SearchEvent {}
     record LinkClicked(String url) implements SearchEvent {}

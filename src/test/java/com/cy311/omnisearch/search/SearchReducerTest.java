@@ -63,7 +63,7 @@ class SearchReducerTest {
             .withLoading(SearchState.LoadingState.LOADING);
         var result = SearchReducer.reduce(
             state,
-            new SearchEvent.SearchResultsLoaded(List.of(new SearchHit("item/1", "a", "item", "mod1")))
+            new SearchEvent.SearchResultsLoaded(List.of(new SearchHit("item/1", "a", "item", "mod1", null)))
         );
         assertNull(result.pendingRequest());
     }
@@ -71,8 +71,8 @@ class SearchReducerTest {
     @Test
     void resultSelected_validIndex_switchesToDetailAndLoading() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1"),
-            new SearchHit("item/2", "b", "item", "mod2")
+            new SearchHit("item/1", "a", "item", "mod1", null),
+            new SearchHit("item/2", "b", "item", "mod2", null)
         ));
         var event = new SearchEvent.ResultSelected(1);
         var result = SearchReducer.reduce(state, event);
@@ -83,7 +83,7 @@ class SearchReducerTest {
     @Test
     void resultSelected_validIndex_pushesNavStack() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1")
+            new SearchHit("item/1", "a", "item", "mod1", null)
         ));
         var event = new SearchEvent.ResultSelected(0);
         var result = SearchReducer.reduce(state, event);
@@ -93,7 +93,7 @@ class SearchReducerTest {
     @Test
     void resultSelected_zeroIndex_works() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1")
+            new SearchHit("item/1", "a", "item", "mod1", null)
         ));
         var event = new SearchEvent.ResultSelected(0);
         var result = SearchReducer.reduce(state, event);
@@ -104,7 +104,7 @@ class SearchReducerTest {
     @Test
     void resultSelected_negativeIndex_throws() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1")
+            new SearchHit("item/1", "a", "item", "mod1", null)
         ));
         var event = new SearchEvent.ResultSelected(-1);
         assertThrows(IndexOutOfBoundsException.class, () ->
@@ -114,7 +114,7 @@ class SearchReducerTest {
     @Test
     void resultSelected_indexEqualToSize_throws() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1")
+            new SearchHit("item/1", "a", "item", "mod1", null)
         ));
         var event = new SearchEvent.ResultSelected(1);
         assertThrows(IndexOutOfBoundsException.class, () ->
@@ -124,7 +124,7 @@ class SearchReducerTest {
     @Test
     void resultSelected_indexFarOutOfBounds_throws() {
         var state = SearchState.initial().withResults(List.of(
-            new SearchHit("item/1", "a", "item", "mod1")
+            new SearchHit("item/1", "a", "item", "mod1", null)
         ));
         var event = new SearchEvent.ResultSelected(999);
         assertThrows(IndexOutOfBoundsException.class, () ->
@@ -197,7 +197,7 @@ class SearchReducerTest {
     @Test
     void goBack_returnsPreviousState() {
         var s0 = SearchState.initial()
-            .withResults(List.of(new SearchHit("item/1", "a", "item", "mod1")));
+            .withResults(List.of(new SearchHit("item/1", "a", "item", "mod1", null)));
         // Build stack: push s0, then transition to DETAIL
         var stateWithHistory = s0.withNavStack(new NavigationStack().push(s0));
         var detailState = stateWithHistory
@@ -213,7 +213,7 @@ class SearchReducerTest {
     void goBack_restoresQueryAndResults() {
         var s0 = SearchState.initial()
             .withQuery(new SearchQuery("娜迦"))
-            .withResults(List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林")));
+            .withResults(List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null)));
         var stateWithHistory = s0.withNavStack(new NavigationStack().push(s0));
         var detailState = stateWithHistory
             .withPage(SearchState.Page.DETAIL)
@@ -275,7 +275,7 @@ class SearchReducerTest {
         var state = SearchState.initial()
             .withPage(SearchState.Page.RESULTS)
             .withQuery(new SearchQuery("test"))
-            .withResults(List.of(new SearchHit("id", "name", "type", "mod")))
+            .withResults(List.of(new SearchHit("id", "name", "type", "mod", null)))
             .withPendingRequest(new PendingRequest.Search(new SearchQuery("test")))
             .withCaptcha(new CaptchaContext("url", "id", "answerUrl"));
         var event = new SearchEvent.CaptchaSolved("solution");
@@ -347,7 +347,7 @@ class SearchReducerTest {
         var state = SearchState.initial()
             .withPage(SearchState.Page.DETAIL)
             .withQuery(new SearchQuery("test"))
-            .withResults(List.of(new SearchHit("id", "name", "type", "mod")))
+            .withResults(List.of(new SearchHit("id", "name", "type", "mod", null)))
             .withErrorMessage("error");
         var event = new SearchEvent.Dismiss();
         var result = SearchReducer.reduce(state, event);
@@ -398,8 +398,8 @@ class SearchReducerTest {
     void reducer_isPure_resultSelected_doesNotMutateInput() {
         var state = SearchState.initial()
             .withResults(List.of(
-                new SearchHit("item/1", "a", "item", "mod1"),
-                new SearchHit("item/2", "b", "item", "mod2")
+                new SearchHit("item/1", "a", "item", "mod1", null),
+                new SearchHit("item/2", "b", "item", "mod2", null)
             ));
         var navBefore = state.navStack();
         var navCanGoBackBefore = state.navStack().canGoBack();
@@ -439,7 +439,7 @@ class SearchReducerTest {
     void reducer_isPure_goBack_doesNotMutateInput() {
         // Build stack by creating a state with history
         var s0 = SearchState.initial()
-            .withResults(List.of(new SearchHit("item/1", "a", "item", "mod1")));
+            .withResults(List.of(new SearchHit("item/1", "a", "item", "mod1", null)));
         var detailState = s0
             .withNavStack(new NavigationStack().push(s0))
             .withPage(SearchState.Page.DETAIL)

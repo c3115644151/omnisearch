@@ -17,13 +17,13 @@ class McmodHttpClientTest {
     @Test
     void buildSearchUrlNormal() {
         String url = McmodHttpClient.buildSearchUrl("娜迦");
-        assertEquals("https://search.mcmod.cn/s?key=%E5%A8%9C%E8%BF%A6", url);
+        assertEquals("https://search.mcmod.cn/s?key=%E5%A8%9C%E8%BF%A6&filter=3", url);
     }
 
     @Test
     void buildSearchUrlAscii() {
         String url = McmodHttpClient.buildSearchUrl("diamond");
-        assertEquals("https://search.mcmod.cn/s?key=diamond", url);
+        assertEquals("https://search.mcmod.cn/s?key=diamond&filter=3", url);
     }
 
     @Test
@@ -40,7 +40,19 @@ class McmodHttpClientTest {
     @Test
     void buildSearchUrlEmptyQuery() {
         String url = McmodHttpClient.buildSearchUrl("");
-        assertEquals("https://search.mcmod.cn/s?key=", url);
+        assertEquals("https://search.mcmod.cn/s?key=&filter=3", url);
+    }
+
+    @Test
+    void buildSearchUrlPage1() {
+        String url = McmodHttpClient.buildSearchUrl("test", 1);
+        assertEquals("https://search.mcmod.cn/s?key=test&filter=3", url);
+    }
+
+    @Test
+    void buildSearchUrlPage2() {
+        String url = McmodHttpClient.buildSearchUrl("test", 2);
+        assertEquals("https://search.mcmod.cn/s?key=test&filter=3&page=2", url);
     }
 
     @Test
@@ -81,89 +93,96 @@ class McmodHttpClientTest {
 
     @Test
     void cookieStoreInitiallyEmpty() {
-        McmodHttpClient client = new McmodHttpClient();
-        assertTrue(client.getCookieStore().isEmpty());
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            assertTrue(client.getCookieStore().isEmpty());
+        }
     }
 
     @Test
     void injectAndRetrieveCookies() {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("PHPSESSID", "test-session", "csrf_token", "abc123"));
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("PHPSESSID", "test-session", "csrf_token", "abc123"));
 
-        Map<String, String> stored = client.getCookieStore();
-        assertEquals(2, stored.size());
-        assertEquals("test-session", stored.get("PHPSESSID"));
-        assertEquals("abc123", stored.get("csrf_token"));
+            Map<String, String> stored = client.getCookieStore();
+            assertEquals(2, stored.size());
+            assertEquals("test-session", stored.get("PHPSESSID"));
+            assertEquals("abc123", stored.get("csrf_token"));
+        }
     }
 
     @Test
     void cookieStoreIsolatedAcrossInstances() {
-        McmodHttpClient client1 = new McmodHttpClient();
-        McmodHttpClient client2 = new McmodHttpClient();
+        try (McmodHttpClient client1 = new McmodHttpClient();
+             McmodHttpClient client2 = new McmodHttpClient()) {
+            client1.injectCookieStore(Map.of("PHPSESSID", "session-1"));
+            client2.injectCookieStore(Map.of("PHPSESSID", "session-2"));
 
-        client1.injectCookieStore(Map.of("PHPSESSID", "session-1"));
-        client2.injectCookieStore(Map.of("PHPSESSID", "session-2"));
-
-        assertAll(
-            () -> assertEquals("session-1", client1.getCookieStore().get("PHPSESSID")),
-            () -> assertEquals("session-2", client2.getCookieStore().get("PHPSESSID"))
-        );
+            assertAll(
+                () -> assertEquals("session-1", client1.getCookieStore().get("PHPSESSID")),
+                () -> assertEquals("session-2", client2.getCookieStore().get("PHPSESSID"))
+            );
+        }
     }
 
     @Test
     void injectCookieMergesWithExisting() {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("a", "1"));
-        client.injectCookieStore(Map.of("b", "2"));
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("a", "1"));
+            client.injectCookieStore(Map.of("b", "2"));
 
-        Map<String, String> stored = client.getCookieStore();
-        assertAll(
-            () -> assertEquals(2, stored.size()),
-            () -> assertEquals("1", stored.get("a")),
-            () -> assertEquals("2", stored.get("b"))
-        );
+            Map<String, String> stored = client.getCookieStore();
+            assertAll(
+                () -> assertEquals(2, stored.size()),
+                () -> assertEquals("1", stored.get("a")),
+                () -> assertEquals("2", stored.get("b"))
+            );
+        }
     }
 
     @Test
     void injectCookieOverwritesExistingKey() {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("key", "old"));
-        client.injectCookieStore(Map.of("key", "new"));
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("key", "old"));
+            client.injectCookieStore(Map.of("key", "new"));
 
-        assertEquals("new", client.getCookieStore().get("key"));
+            assertEquals("new", client.getCookieStore().get("key"));
+        }
     }
 
     @Test
     void injectNullCookiesDoesNotThrow() {
-        McmodHttpClient client = new McmodHttpClient();
-        assertDoesNotThrow(() -> client.injectCookieStore(null));
-        assertTrue(client.getCookieStore().isEmpty());
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            assertDoesNotThrow(() -> client.injectCookieStore(null));
+            assertTrue(client.getCookieStore().isEmpty());
+        }
     }
 
     @Test
     void getCookieStoreReturnsSnapshot() {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("a", "1"));
-        Map<String, String> snapshot = client.getCookieStore();
-        snapshot.put("injected", "should-not-affect-store");
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("a", "1"));
+            Map<String, String> snapshot = client.getCookieStore();
+            snapshot.put("injected", "should-not-affect-store");
 
-        assertNull(client.getCookieStore().get("injected"),
-            "Modifying returned map should not affect internal store");
+            assertNull(client.getCookieStore().get("injected"),
+                "Modifying returned map should not affect internal store");
+        }
     }
 
     @Test
-    void cookieStoreIsThreadSafe() {
-        McmodHttpClient client = new McmodHttpClient();
-        client.injectCookieStore(Map.of("a", "1", "b", "2"));
-        // ConcurrentHashMap is inherently thread-safe; verify no exception on concurrent access
-        assertDoesNotThrow(() -> {
-            Thread t1 = new Thread(() -> client.injectCookieStore(Map.of("c", "3")));
-            Thread t2 = new Thread(() -> client.getCookieStore());
-            t1.start();
-            t2.start();
-            t1.join();
-            t2.join();
-        });
+    void cookieStoreIsThreadSafe() throws Exception {
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            client.injectCookieStore(Map.of("a", "1", "b", "2"));
+            // SessionCookieStore uses ConcurrentHashMap internally; verify no exception on concurrent access
+            assertDoesNotThrow(() -> {
+                Thread t1 = new Thread(() -> client.injectCookieStore(Map.of("c", "3")));
+                Thread t2 = new Thread(() -> client.getCookieStore());
+                t1.start();
+                t2.start();
+                t1.join();
+                t2.join();
+            });
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -172,44 +191,50 @@ class McmodHttpClientTest {
 
     @Test
     void nullQueryReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.search(null).get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.search(null).get();
+            assertEquals("", result);
+        }
     }
 
     @Test
     void blankQueryReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.search("   ").get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.search("   ").get();
+            assertEquals("", result);
+        }
     }
 
     @Test
     void nullItemIdReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.getItemPage(null).get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.getItemPage(null).get();
+            assertEquals("", result);
+        }
     }
 
     @Test
     void blankModIdReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.getModPage("  ").get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.getModPage("  ").get();
+            assertEquals("", result);
+        }
     }
 
     @Test
     void nullAnswerUrlReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.submitCaptcha(null, "answer", null).get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.submitCaptcha(null, "answer", null).get();
+            assertEquals("", result);
+        }
     }
 
     @Test
     void blankAnswerUrlReturnsEmpty() throws Exception {
-        McmodHttpClient client = new McmodHttpClient();
-        String result = client.submitCaptcha("  ", "answer", null).get();
-        assertEquals("", result);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            String result = client.submitCaptcha("  ", "answer", null).get();
+            assertEquals("", result);
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -218,19 +243,21 @@ class McmodHttpClientTest {
 
     @Test
     void unreachableHostThrowsException() {
-        McmodHttpClient client = new McmodHttpClient();
-        // submitCaptcha takes a raw URL, so we can test against an unreachable address
-        CompletableFuture<String> future = client.submitCaptcha("http://localhost:1/", "test", null);
-        assertThrows(CompletionException.class, future::join);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            // submitCaptcha takes a raw URL, so we can test against an unreachable address
+            CompletableFuture<String> future = client.submitCaptcha("http://localhost:1/", "test", null);
+            assertThrows(CompletionException.class, future::join);
+        }
     }
 
     @Test
     void malformedUrlThrowsException() {
-        McmodHttpClient client = new McmodHttpClient();
-        // getItemPage builds URL from its internal builder, so malformed URLs
-        // shouldn't normally happen. Test via an edge case in executeGet.
-        // Use submitCaptcha with a clearly malformed URL
-        CompletableFuture<String> future = client.submitCaptcha("not-a-valid-url", "test", null);
-        assertThrows(CompletionException.class, future::join);
+        try (McmodHttpClient client = new McmodHttpClient()) {
+            // getItemPage builds URL from its internal builder, so malformed URLs
+            // shouldn't normally happen. Test via an edge case in executeGet.
+            // Use submitCaptcha with a clearly malformed URL
+            CompletableFuture<String> future = client.submitCaptcha("not-a-valid-url", "test", null);
+            assertThrows(CompletionException.class, future::join);
+        }
     }
 }

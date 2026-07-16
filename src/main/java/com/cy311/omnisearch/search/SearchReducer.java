@@ -13,6 +13,8 @@ public class SearchReducer {
                 .withResults(r.results())
                 .withPendingRequest(null)
                 .withLoading(SearchState.LoadingState.IDLE);
+            case SearchEvent.MoreResultsLoaded r -> current; // handled by OmnisearchWindowReducer
+            case SearchEvent.ModFilterSelected m -> current; // handled by OmnisearchWindowReducer
             case SearchEvent.ResultSelected r -> {
                 if (r.index() < 0 || r.index() >= current.results().size()) {
                     throw new IndexOutOfBoundsException(

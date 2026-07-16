@@ -35,11 +35,11 @@ class DetailContentPaneTest {
         );
         DetailViewState state = DetailViewState.initial().withPage(page);
 
-        DetailViewState rendered = pane.render(gui, state, 100, 40, 320, 220);
+        DetailViewState rendered = pane.render(gui, state, 100, 40, 320, 220, 0, 0);
 
         assertNotNull(rendered.cachedLayout());
         assertEquals(page.id(), rendered.cachedPageId());
-        assertEquals(308, rendered.cachedWidth());
+        assertEquals(310, rendered.cachedWidth());
         assertEquals(rendered.cachedLayout().height(), rendered.contentHeight());
         assertNotNull(rendered.cachedLinks());
     }
@@ -53,15 +53,15 @@ class DetailContentPaneTest {
             new Document("Title", null, null, List.of(new TextNode("content line"))),
             "https://www.mcmod.cn/item/1.html"
         );
-        DetailViewState state = pane.render(gui, DetailViewState.initial().withPage(page), 100, 40, 320, 220);
+        DetailViewState state = pane.render(gui, DetailViewState.initial().withPage(page), 100, 40, 320, 220, 0, 0);
 
         var back = pane.handleClick(state, 100, 40, 320, 220, 108, 48);
         assertTrue(back.handled());
         assertTrue(back.goBack());
         assertNull(back.openUrl());
 
-        int titleX = 100 + 6 + 18 + 6;
-        int titleY = 40 + (26 - font.lineHeight) / 2;
+        int titleX = 100 + 4 + 14 + 4;
+        int titleY = 40 + (18 - font.lineHeight) / 2;
         var title = pane.handleClick(state, 100, 40, 320, 220, titleX + 5, titleY + 1);
         assertTrue(title.handled());
         assertFalse(title.goBack());

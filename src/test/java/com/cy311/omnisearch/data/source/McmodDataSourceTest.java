@@ -8,6 +8,7 @@ import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
 import com.cy311.omnisearch.data.model.document.TextNode;
 import com.cy311.omnisearch.data.parser.McmodParser;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -32,6 +33,13 @@ class McmodDataSourceTest {
         parser = new McmodParser();
         captchaHandler = new McmodCaptchaHandler();
         dataSource = new McmodDataSource(client, parser, captchaHandler);
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (client != null) {
+            client.close();
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -125,7 +133,7 @@ class McmodDataSourceTest {
             .thenReturn(CompletableFuture.completedFuture(searchHtml));
 
         List<SearchHit> expectedHits = List.of(
-            new SearchHit("item/1", "测试物品", "item", "测试模组"));
+            new SearchHit("item/1", "测试物品", "item", "测试模组", null));
         when(mockParser.parseSearchResults(anyString()))
             .thenReturn(expectedHits);
 

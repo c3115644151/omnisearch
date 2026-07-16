@@ -53,7 +53,7 @@ class SearchRepositoryTest {
     void search_cacheHit_doesNotCallDataSource() throws Exception {
         var query = new SearchQuery("cached query");
         var cachedResults = List.of(
-            new SearchHit("id1", "cached", "mod", "source")
+            new SearchHit("id1", "cached", "mod", "source", null)
         );
 
         // Pre-populate cache
@@ -77,7 +77,7 @@ class SearchRepositoryTest {
     void search_cacheMiss_fetchesFromDataSourceAndCaches() throws Exception {
         var query = new SearchQuery("miss query");
         var fetchedResults = List.of(
-            new SearchHit("id2", "fetched", "mod", "source")
+            new SearchHit("id2", "fetched", "mod", "source", null)
         );
 
         var mockDS = new MockDataSource(fetchedResults, null, false);
@@ -104,7 +104,7 @@ class SearchRepositoryTest {
     void search_dsException_fallsBackToStaleCache() throws Exception {
         var query = new SearchQuery("stale fallback");
         var staleResults = List.of(
-            new SearchHit("id1", "stale", "mod", "source")
+            new SearchHit("id1", "stale", "mod", "source", null)
         );
 
         // Manually write stale data
@@ -191,7 +191,7 @@ class SearchRepositoryTest {
     @Test
     void resumeAfterCaptcha_searchRequest_returnsSearchResultsAndCaches() throws Exception {
         var query = new SearchQuery("captcha query");
-        var results = List.of(new SearchHit("id2", "fetched", "mod", "source"));
+        var results = List.of(new SearchHit("id2", "fetched", "mod", "source", null));
         var mockDS = new MockCaptchaDataSource(results, null);
         var repo = new SearchRepository(cache, mockDS);
 

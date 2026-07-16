@@ -28,7 +28,7 @@ class OmnisearchWindowReducerTest {
     @Test
     void resultSelected_thenGoBack_restoresPreviousResultsView() {
         OmnisearchWindowState state = OmnisearchWindowState.initial();
-        List<SearchHit> results = List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林"));
+        List<SearchHit> results = List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null));
 
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.QueryChanged("娜迦"));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchSubmitted());
@@ -50,7 +50,7 @@ class OmnisearchWindowReducerTest {
     @Test
     void detailLoaded_updatesDetailStateAndClearsLoading() {
         OmnisearchWindowState state = OmnisearchWindowState.initial();
-        List<SearchHit> results = List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林"));
+        List<SearchHit> results = List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null));
         ItemPage page = new ItemPage("item/1", "娜迦鳞片", "暮色森林", new Document("title", null, null, List.of()), "https://example.com");
 
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
@@ -71,5 +71,112 @@ class OmnisearchWindowReducerTest {
         assertEquals(SearchState.LoadingState.ERROR, state.window().loading());
         assertEquals("network down", state.window().errorMessage());
         assertEquals(SearchSessionState.BodyView.SEARCH, state.search().currentView());
+    }
+
+    @Test
+    void modFilterSelected_filtersResultsByModName() {
+        OmnisearchWindowState state = OmnisearchWindowState.initial();
+        List<SearchHit> results = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null),
+            new SearchHit("item/2", "巫妖塔", "item", "暮色森林", null),
+            new SearchHit("item/3", "猪巫妖", "item", "诡厄巫法", null)
+        );
+
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        assertEquals(3, state.search().results().size());
+        assertEquals(3, state.search().unfilteredResults().size());
+
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
+
+        assertEquals(2, state.search().results().size());
+        assertEquals("暮色森林", state.search().modFilter());
+        assertEquals(3, state.search().unfilteredResults().size());
+        assertTrue(state.search().results().stream().allMatch(h -> "暮色森林".equals(h.sourceMod())));
+    }
+
+    @Test
+    void newSearchPreservesModFilter() {
+        OmnisearchWindowState state = OmnisearchWindowState.initial();
+        List<SearchHit> results = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null),
+            new SearchHit("item/2", "猪巫妖", "item", "诡厄巫法", null)
+        );
+
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
+        assertEquals("暮色森林", state.search().modFilter());
+
+        // SearchSubmitted should preserve modFilter for mod-scoped re-search
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchSubmitted());
+
+        assertEquals("暮色森林", state.search().modFilter());
+        assertTrue(state.search().results().isEmpty()); // cleared until results loaded
+        assertTrue(state.search().unfilteredResults().isEmpty());
+    }
+
+    @Test
+    void searchResultsLoadedWithModFilter_filtersResults() {
+        OmnisearchWindowState state = OmnisearchWindowState.initial();
+        // Set mod filter first
+        List<SearchHit> initialResults = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null)
+        );
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(initialResults));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
+
+        // New search results come in with mixed mods
+        List<SearchHit> newResults = List.of(
+            new SearchHit("item/10", "巫妖塔", "item", "暮色森林", null),
+            new SearchHit("item/11", "猪巫妖", "item", "诡厄巫法", null),
+            new SearchHit("item/12", "巫妖王", "item", "暮色森林", null)
+        );
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(newResults));
+
+        // Only 暮色森林 results should be displayed
+        assertEquals(2, state.search().results().size());
+        assertEquals(3, state.search().unfilteredResults().size());
+        assertTrue(state.search().results().stream().allMatch(h -> "暮色森林".equals(h.sourceMod())));
+    }
+
+    @Test
+    void clearModFilterThenReapply_worksCorrectly() {
+        OmnisearchWindowState state = OmnisearchWindowState.initial();
+        List<SearchHit> results = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null),
+            new SearchHit("item/2", "猪巫妖", "item", "诡厄巫法", null)
+        );
+
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
+        assertEquals(1, state.search().results().size());
+
+        // Clear mod filter
+        state = state.withSearch(state.search().clearModFilter());
+        assertNull(state.search().modFilter());
+        assertEquals(2, state.search().results().size());
+        assertEquals(2, state.search().unfilteredResults().size()); // unfiltered preserved
+
+        // Re-apply a different mod filter
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("诡厄巫法"));
+        assertEquals(1, state.search().results().size());
+        assertEquals("诡厄巫法", state.search().results().get(0).sourceMod());
+    }
+
+    @Test
+    void moreResultsLoaded_appendsToBothResultsAndUnfiltered() {
+        OmnisearchWindowState state = OmnisearchWindowState.initial();
+        List<SearchHit> page1 = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null),
+            new SearchHit("item/2", "猪巫妖", "item", "诡厄巫法", null)
+        );
+        List<SearchHit> page2 = List.of(
+            new SearchHit("item/3", "巫妖塔", "item", "暮色森林", null)
+        );
+
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(page1));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.MoreResultsLoaded(page2));
+
+        assertEquals(3, state.search().results().size());
+        assertEquals(3, state.search().unfilteredResults().size());
     }
 }

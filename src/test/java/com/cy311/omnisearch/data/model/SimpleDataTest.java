@@ -28,7 +28,7 @@ class SimpleDataTest {
 
     @Test
     void searchHit_creates() {
-        var hit = new SearchHit("item/123", "娜迦鳞片", "item", "暮色森林");
+        var hit = new SearchHit("item/123", "娜迦鳞片", "item", "暮色森林", null);
         assertEquals("item/123", hit.id());
         assertEquals("娜迦鳞片", hit.name());
         assertEquals("item", hit.type());
@@ -37,15 +37,15 @@ class SimpleDataTest {
 
     @Test
     void searchHit_equality() {
-        var a = new SearchHit("id1", "name1", "type1", "mod1");
-        var b = new SearchHit("id1", "name1", "type1", "mod1");
+        var a = new SearchHit("id1", "name1", "type1", "mod1", null);
+        var b = new SearchHit("id1", "name1", "type1", "mod1", null);
         assertEquals(a, b);
     }
 
     @Test
     void searchHit_notEqual() {
-        var a = new SearchHit("id1", "name1", "type1", "mod1");
-        var b = new SearchHit("id2", "name1", "type1", "mod1");
+        var a = new SearchHit("id1", "name1", "type1", "mod1", null);
+        var b = new SearchHit("id2", "name1", "type1", "mod1", null);
         assertNotEquals(a, b);
     }
 

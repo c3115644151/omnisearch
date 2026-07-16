@@ -2,6 +2,7 @@ package com.cy311.omnisearch.client.render;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
@@ -77,7 +78,14 @@ public class RenderTestUtil {
             .filter(i -> i.getMethod().getName().equals("drawString"))
             .map(i -> {
                 Object[] args = i.getArguments();
-                String text = args[1] instanceof String s ? s : args[1].toString();
+                String text;
+                if (args[1] instanceof String s) {
+                    text = s;
+                } else if (args[1] instanceof Component c) {
+                    text = c.getString();
+                } else {
+                    text = args[1].toString();
+                }
                 int x = args[2] instanceof Number n ? n.intValue() : 0;
                 int y = args[3] instanceof Number n ? n.intValue() : 0;
                 int color = args[4] instanceof Number n ? n.intValue() : 0;
