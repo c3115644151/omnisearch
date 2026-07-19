@@ -124,7 +124,7 @@ class McmodDataSourceTest {
         McmodHttpClient mockClient = mock(McmodHttpClient.class);
         McmodParser mockParser = mock(McmodParser.class);
         McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
-        McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler);
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
 
         String searchHtml = "<html><body><div class=\"result\">结果</div></body></html>";
         when(mockClient.submitCaptcha(anyString(), anyString(), any()))
@@ -148,6 +148,7 @@ class McmodDataSourceTest {
         // Assert
         assertEquals(expectedHits, result);
         verify(mockParser).parseSearchResults(searchHtml);
+        }
     }
 
     @Test
@@ -156,7 +157,7 @@ class McmodDataSourceTest {
         McmodHttpClient mockClient = mock(McmodHttpClient.class);
         McmodParser mockParser = mock(McmodParser.class);
         McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
-        McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler);
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
 
         String captchaHtml = "<html><body>"
             + "<div class=\"captcha-image-container\">"
@@ -176,6 +177,7 @@ class McmodDataSourceTest {
         CompletableFuture<List<SearchHit>> future = ds.submitCaptcha(
             new SearchQuery("test"), captcha, "99");
         assertThrows(CompletionException.class, future::join);
+        }
     }
 
     @Test
@@ -183,7 +185,7 @@ class McmodDataSourceTest {
         McmodHttpClient mockClient = mock(McmodHttpClient.class);
         McmodParser mockParser = mock(McmodParser.class);
         McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
-        McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler);
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
 
         when(mockClient.submitCaptcha(anyString(), anyString(), any()))
             .thenReturn(CompletableFuture.completedFuture(""));
@@ -196,6 +198,7 @@ class McmodDataSourceTest {
             new SearchQuery("test"), captcha, "42").get();
 
         assertTrue(result.isEmpty());
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -207,7 +210,7 @@ class McmodDataSourceTest {
         McmodHttpClient mockClient = mock(McmodHttpClient.class);
         McmodParser mockParser = mock(McmodParser.class);
         McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
-        McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler);
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
 
         String pageHtml = "<html><body>物品页面内容</body></html>";
         when(mockClient.submitCaptcha(anyString(), anyString(), any()))
@@ -230,6 +233,7 @@ class McmodDataSourceTest {
         assertNotNull(result);
         assertEquals("item/123", result.id());
         assertEquals("测试物品", result.title());
+        }
     }
 
     @Test
@@ -237,7 +241,7 @@ class McmodDataSourceTest {
         McmodHttpClient mockClient = mock(McmodHttpClient.class);
         McmodParser mockParser = mock(McmodParser.class);
         McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
-        McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler);
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
 
         String captchaHtml = "<html><body>"
             + "<div class=\"captcha-image-container\">"
@@ -256,5 +260,6 @@ class McmodDataSourceTest {
         CompletableFuture<ItemPage> future = ds.submitCaptchaForPage(
             "item/123", captcha, "00");
         assertThrows(CompletionException.class, future::join);
+        }
     }
 }

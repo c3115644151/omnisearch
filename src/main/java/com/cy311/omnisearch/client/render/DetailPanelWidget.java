@@ -25,8 +25,6 @@ public class DetailPanelWidget {
     // Track hover state for tooltips (set during render, used after)
     private boolean titleHovered;
     private boolean tagHovered;
-    private int lastMouseX;
-    private int lastMouseY;
 
     public DetailPanelWidget(Font font) {
         this.font = font;
@@ -65,8 +63,6 @@ public class DetailPanelWidget {
         modTruncated = false;
         titleHovered = false;
         tagHovered = false;
-        lastMouseX = mouseX;
-        lastMouseY = mouseY;
 
         // Header bar
         gui.fill(x, y, x + width, y + OmniTheme.HEADER_HEIGHT, OmniTheme.BG_PANEL);

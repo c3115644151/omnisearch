@@ -14,6 +14,5 @@ public class ClientEntryPoint {
     }
 
     private static void onClientSetup(FMLClientSetupEvent event) {
-        // Subsequent Wave: register overlay and Screen here
     }
 }

@@ -24,8 +24,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
-import java.io.FileWriter;
-import java.io.PrintWriter;
+
 
 // verified: Screen, Minecraft.setScreen(), GuiGraphics — standard MC API, stable
 // verified: EditBox from NeoForge 1.21.1 lexxie.dev 2026-06-14
@@ -51,15 +50,9 @@ public class OmnisearchScreen extends Screen {
     private int clearCacheFlashTicks = 0;
     private static final int SBW = 300;
 
-    private static void debugLog(String msg) {
-        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-            pw.println(System.currentTimeMillis() + " " + msg);
-        } catch (Exception ignored) {}
-    }
-
     public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader) {
         super(Component.literal("Omnisearch"));
-        debugLog("Screen constructor called");
+        OmnisearchMod.LOGGER.debug("Screen constructor called");
         this.repo = repo;
         this.imageDownloader = imageDownloader;
         this.uiState = OmnisearchWindowState.initial();
@@ -68,7 +61,7 @@ public class OmnisearchScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        debugLog("Screen init() called, width=" + width + " height=" + height);
+        OmnisearchMod.LOGGER.debug("Screen init() called, width={} height={}", width, height);
         imageManager = new ImageManager(imageDownloader != null ? imageDownloader : url -> null, new com.cy311.omnisearch.data.client.RequestExecutor());
         int cx = (width - SBW) / 2;
         sb = new SearchBarWidget(font, cx, height / 3, SBW);
@@ -93,7 +86,7 @@ public class OmnisearchScreen extends Screen {
                 floatingWindow.renderShell(g, width, height, panelBounds);
                 int[] searchBounds = floatingWindow.getSearchBarBounds(panelBounds, searchBarHeight);
                 int[] bodyBounds = floatingWindow.getBodyBounds(panelBounds, searchBarHeight);
-                sb.render(g, searchBounds[0], searchBounds[1], searchBounds[2], uiState.search().query().text());
+                sb.render(g, searchBounds[0], searchBounds[1], searchBounds[2], uiState.search().query().text(), uiState.search().modFilter(), mx, my);
                 uiState = uiState.withSearch(
                     resultsPane.render(g, uiState.search(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], mx, my)
                 );
@@ -240,7 +233,7 @@ public class OmnisearchScreen extends Screen {
 
     @Override
     public boolean keyPressed(int kc, int sc, int mod) {
-        debugLog("keyPressed kc=" + kc + " focused=" + (sb != null ? sb.getEditBox().isFocused() : "null-sb"));
+        OmnisearchMod.LOGGER.debug("keyPressed kc={} focused={}", kc, sb != null ? sb.getEditBox().isFocused() : "null-sb");
         if (kc == 256) { Minecraft.getInstance().setScreen(null); return true; }
         if (kc == 292) { // F6 - clear all caches and reload current page
             repo.clearCache();
@@ -324,6 +317,11 @@ public class OmnisearchScreen extends Screen {
         boolean clickedSearch = mx >= searchBounds[0] && mx <= searchBounds[0] + searchBounds[2]
                 && my >= searchBounds[1] && my <= searchBounds[1] + searchBounds[3];
         sb.getEditBox().setFocused(clickedSearch);
+        // Check X button on mod filter tag
+        if (uiState.search().modFilter() != null && sb.isXButtonClicked((int) mx, (int) my, searchBounds[1])) {
+            uiState = uiState.withSearch(uiState.search().clearModFilter());
+            return true;
+        }
         if (clickedSearch && sb.getEditBox().mouseClicked(mx, my, btn)) {
             return true;
         }
@@ -332,6 +330,10 @@ public class OmnisearchScreen extends Screen {
             int[] bodyBounds = floatingWindow.getBodyBounds(panelBounds, searchBarHeight);
             var click = resultsPane.handleClick(uiState.search(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], mx, my);
             uiState = uiState.withSearch(click.state());
+            if (click.modFilter() != null) {
+                uiState = uiState.withSearch(uiState.search().applyModFilter(click.modFilter()));
+                return true;
+            }
             if (click.handled()) {
                 loadDetail(click.row());
                 return true;
@@ -383,6 +385,15 @@ public class OmnisearchScreen extends Screen {
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         if (uiState.search().currentView() == SearchSessionState.BodyView.RESULTS) {
             uiState = uiState.withSearch(resultsPane.handleScroll(uiState.search(), scrollY, height));
+            // Auto-load more when scrolling near bottom
+            var s = uiState.search();
+            if (s.hasMore() && !s.loadingMore() && !s.results().isEmpty()) {
+                int visibleRows = Math.max(1, height / 16);
+                int nearBottomThreshold = Math.max(1, visibleRows / 2);
+                if (s.resultsScrollOffset() + visibleRows >= s.results().size() - nearBottomThreshold) {
+                    loadMoreResults();
+                }
+            }
             return true;
         }
         if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
@@ -413,9 +424,33 @@ public class OmnisearchScreen extends Screen {
         }
     }
 
+    private void loadMoreResults() {
+        var s = uiState.search();
+        int nextPage = s.currentPage() + 1;
+        uiState = uiState.withSearch(s.withLoadingMore(true));
+        long requestId = ++searchSeq;
+        repo.searchMore(s.query(), nextPage)
+            .thenAccept(results -> Minecraft.getInstance().tell(() -> {
+                if (requestId != searchSeq) return;
+                OmnisearchMod.LOGGER.debug("loadMoreResults page={} got {} results", nextPage, results.size());
+                uiState = OmnisearchWindowReducer.reduce(
+                    uiState,
+                    new SearchEvent.MoreResultsLoaded(results)
+                );
+            }))
+            .exceptionally(ex -> {
+                Minecraft.getInstance().tell(() -> {
+                    if (requestId != searchSeq) return;
+                    OmnisearchMod.LOGGER.warn("loadMoreResults failed", ex);
+                    uiState = uiState.withSearch(uiState.search().withLoadingMore(false));
+                });
+                return null;
+            });
+    }
+
     private void submitSearch() {
         slide.startSlideIn();
-        debugLog("submitSearch called, query=" + uiState.search().query().text());
+        OmnisearchMod.LOGGER.debug("submitSearch called, query={}", uiState.search().query().text());
         uiState = uiState.withSearch(uiState.search().withResultsScrollOffset(0));
         uiState = uiState.withDetail(uiState.detail().withScrollOffset(0));
         SearchQuery submittedQuery = uiState.search().query();
@@ -459,7 +494,7 @@ public class OmnisearchScreen extends Screen {
 
     private void loadDetail(int row) {
         slide.startSlideIn();
-        debugLog("loadDetail called row=" + row + " id=" + (row >= 0 && row < uiState.search().results().size() ? uiState.search().results().get(row).id() : "?"));
+        OmnisearchMod.LOGGER.debug("loadDetail called row={} id={}", row, row >= 0 && row < uiState.search().results().size() ? uiState.search().results().get(row).id() : "?");
         uiState = uiState.withDetail(uiState.detail().withScrollOffset(0).clearLayoutCache());
         uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.ResultSelected(row));
         String pageId = uiState.search().results().get(row).id();

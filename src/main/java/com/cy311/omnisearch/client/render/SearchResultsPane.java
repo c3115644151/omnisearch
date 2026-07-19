@@ -46,8 +46,6 @@ public final class SearchResultsPane {
             int indicatorY = contentY + Math.min(totalRowsHeight, contentHeight) - font.lineHeight - 2;
             if (indicatorY > contentY) {
                 String text = "加载更多...";
-                int textWidth = font.width(text);
-                int textX = contentX + (contentWidth - textWidth) / 2;
                 gui.drawCenteredString(font, text, contentX + contentWidth / 2, indicatorY, OmniTheme.TEXT_GRAY);
             }
         }

@@ -42,13 +42,17 @@ public class McmodParser {
     private static String extractImageUrl(Element img) {
         // Try data-src first (for lazy-loaded images), using absUrl to resolve protocol-relative URLs
         String url = img.absUrl("data-src");
+        if (isPlaceholderSrc(url)) url = "";
         if (url.isBlank()) url = img.attr("data-src");
+        if (isPlaceholderSrc(url)) url = "";
         if (url.isBlank()) {
             url = img.absUrl("src");
         }
+        if (isPlaceholderSrc(url)) url = "";
         if (url.isBlank()) {
             url = img.attr("src");
         }
+        if (isPlaceholderSrc(url)) url = "";
         return normalizeUrl(url);
     }
 

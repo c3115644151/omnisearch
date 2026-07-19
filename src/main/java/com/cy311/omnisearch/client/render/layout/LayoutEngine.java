@@ -138,7 +138,7 @@ public class LayoutEngine {
 
         List<InlineFragment> fragments = collectInlineFragments(node.getChildren(), null);
         int usedHeight = layoutInlineFragmentsIntoParagraph(heading, fragments, contentX, currentY, contentWidth);
-        heading.h = usedHeight + headingSpacing;
+        heading.h = Math.max(usedHeight, scaledLineHeight) + headingSpacing;
         currentY += heading.h;
         return heading;
     }

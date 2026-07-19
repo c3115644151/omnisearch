@@ -61,12 +61,13 @@ class SearchRepositoryTest {
 
         // Create mock DS that would fail if called
         var mockDS = new MockDataSource(null, null, false);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var results = repo.search(query).get();
 
         assertEquals(cachedResults, results);
         assertFalse(mockDS.searchCalled, "DataSource.search should not be called on cache hit");
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -81,7 +82,7 @@ class SearchRepositoryTest {
         );
 
         var mockDS = new MockDataSource(fetchedResults, null, false);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         // First call: cache miss, should fetch from DS
         var results = repo.search(query).get();
@@ -94,6 +95,7 @@ class SearchRepositoryTest {
         var cachedAgain = repo.search(query).get();
         assertEquals(fetchedResults, cachedAgain);
         assertFalse(mockDS.searchCalled, "DataSource.search should not be called when cached");
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -111,11 +113,12 @@ class SearchRepositoryTest {
         writeStaleSearchEntry(query, staleResults);
 
         var mockDS = new MockDataSource(null, null, true);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var results = repo.search(query).get();
 
         assertEquals(staleResults, results);
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -127,11 +130,12 @@ class SearchRepositoryTest {
         var query = new SearchQuery("no fallback");
 
         var mockDS = new MockDataSource(null, null, true);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var future = repo.search(query);
 
         assertThrows(CompletionException.class, future::join);
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -151,12 +155,13 @@ class SearchRepositoryTest {
         cache.putPage(pageId, cachedPage);
 
         var mockDS = new MockDataSource(null, null, false);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var page = repo.getPage(pageId).get();
 
         assertEquals(cachedPage, page);
         assertFalse(mockDS.getPageCalled, "DataSource.getPage should not be called on cache hit");
+        }
     }
 
     // ══════════════════════════════════════════════
@@ -173,7 +178,7 @@ class SearchRepositoryTest {
         );
 
         var mockDS = new MockDataSource(null, fetchedPage, false);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         // First call: cache miss
         var page = repo.getPage(pageId).get();
@@ -186,6 +191,7 @@ class SearchRepositoryTest {
         var cachedAgain = repo.getPage(pageId).get();
         assertEquals(fetchedPage, cachedAgain);
         assertFalse(mockDS.getPageCalled, "DataSource.getPage should not be called when cached");
+        }
     }
 
     @Test
@@ -193,7 +199,7 @@ class SearchRepositoryTest {
         var query = new SearchQuery("captcha query");
         var results = List.of(new SearchHit("id2", "fetched", "mod", "source", null));
         var mockDS = new MockCaptchaDataSource(results, null);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var resumed = repo.resumeAfterCaptcha(
             new PendingRequest.Search(query),
@@ -205,6 +211,7 @@ class SearchRepositoryTest {
         assertEquals(results, ((PendingRequestResult.SearchResults) resumed).results());
         assertEquals(results, cache.getSearchResults(query));
         assertTrue(mockDS.submitSearchCaptchaCalled);
+        }
     }
 
     @Test
@@ -216,7 +223,7 @@ class SearchRepositoryTest {
             "https://example.com/item/789"
         );
         var mockDS = new MockCaptchaDataSource(null, page);
-        var repo = new SearchRepository(cache, mockDS);
+        try (var repo = new SearchRepository(cache, mockDS)) {
 
         var resumed = repo.resumeAfterCaptcha(
             new PendingRequest.Detail(pageId),
@@ -228,6 +235,7 @@ class SearchRepositoryTest {
         assertEquals(page, ((PendingRequestResult.DetailPage) resumed).page());
         assertEquals(page, cache.getPage(pageId));
         assertTrue(mockDS.submitPageCaptchaCalled);
+        }
     }
 
     // ══════════════════════════════════════════════

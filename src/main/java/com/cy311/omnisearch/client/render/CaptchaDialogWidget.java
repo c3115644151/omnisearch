@@ -86,7 +86,6 @@ public class CaptchaDialogWidget {
         int placeholderY = subtitleY + ELEMENT_GAP + 4;
         drawCaptchaPlaceholder(gui, placeholderX, placeholderY, CAPTCHA_WIDTH, CAPTCHA_HEIGHT);
 
-        // ---- Captcha ID (hidden info, displayed for debugging) ----
         // Input and submit button are managed by the Screen layer.
     }
 

@@ -21,11 +21,8 @@ public class SearchBarWidget {
     private final Font font;
 
     // Cached tag layout for click detection
-    private int cachedTagX = 0;
     private int cachedTagWidth = 0;
     private int cachedXButtonX = 0;
-    private int cachedEditBoxX = 0;
-    private int cachedEditBoxWidth = 0;
 
     public SearchBarWidget(Font font, int x, int y, int width) {
         this.font = font;
@@ -100,11 +97,8 @@ public class SearchBarWidget {
             gui.drawString(font, "\u00D7", xBtnX + 2, xTextY, xColor, false);
 
             // Cache for click detection
-            cachedTagX = tagX;
             cachedTagWidth = tagW;
             cachedXButtonX = xBtnX;
-            cachedEditBoxX = editBoxX;
-            cachedEditBoxWidth = editBoxWidth;
         } else {
             cachedTagWidth = 0;
         }

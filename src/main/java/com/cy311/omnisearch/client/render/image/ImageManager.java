@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.io.FileWriter;
-import java.io.PrintWriter;
+
+import com.cy311.omnisearch.OmnisearchMod;
 import com.cy311.omnisearch.data.client.RequestExecutor;
 
 /**
@@ -70,7 +70,7 @@ public class ImageManager implements AutoCloseable {
         }
 
         // Start loading
-        log("downloading: " + url);
+        OmnisearchMod.LOGGER.debug("downloading: {}", url);
         CompletableFuture<ResourceLocation> future = new CompletableFuture<>();
         ImageEntry entry = new ImageEntry(null, future, null);
         cache.put(url, entry);
@@ -78,7 +78,7 @@ public class ImageManager implements AutoCloseable {
         executor.submit(() -> {
             byte[] imageBytes = downloadImage(url);
             if (imageBytes == null || closed) {
-                log("no bytes for: " + url + " (null=" + (imageBytes == null) + " closed=" + closed + ")");
+                OmnisearchMod.LOGGER.warn("no bytes for: {} (null={} closed={})", url, imageBytes == null, closed);
                 future.complete(null);
                 return null;
             }
@@ -88,7 +88,7 @@ public class ImageManager implements AutoCloseable {
             try {
                 awtImage = ImageIO.read(new ByteArrayInputStream(imageBytes));
             } catch (Exception e) {
-                log("ImageIO.read exception: " + e.getMessage() + " for: " + url);
+                OmnisearchMod.LOGGER.warn("ImageIO.read exception: {} for: {}", e.getMessage(), url);
             }
 
             if (awtImage != null && !closed) {
@@ -114,7 +114,7 @@ public class ImageManager implements AutoCloseable {
                     DynamicTexture dynTex = new DynamicTexture(nativeImage);
                     ResourceLocation loc = Minecraft.getInstance().getTextureManager()
                         .register("omnisearch-img-" + cache.size(), dynTex);
-                    log("loaded(via ImageIO): " + url + " (" + width + "x" + height + ")");
+                    OmnisearchMod.LOGGER.debug("loaded(via ImageIO): {} ({}x{})", url, width, height);
                     cache.put(url, new ImageEntry(loc, null, new ImageDimensions(width, height)));
                     future.complete(loc);
                 });
@@ -124,7 +124,7 @@ public class ImageManager implements AutoCloseable {
             // Fallback: STBImage for formats ImageIO doesn't support
             NativeImage stbImage = readWithStb(imageBytes);
             if (stbImage == null || closed) {
-                log("Both ImageIO and STBImage failed for: " + url);
+                OmnisearchMod.LOGGER.warn("Both ImageIO and STBImage failed for: {}", url);
                 future.complete(null);
                 return null;
             }
@@ -140,7 +140,7 @@ public class ImageManager implements AutoCloseable {
                 DynamicTexture dynTex = new DynamicTexture(stbImage);
                 ResourceLocation loc = Minecraft.getInstance().getTextureManager()
                     .register("omnisearch-img-" + cache.size(), dynTex);
-                log("loaded(via STB): " + url + " (" + width + "x" + height + ")");
+                OmnisearchMod.LOGGER.debug("loaded(via STB): {} ({}x{})", url, width, height);
                 cache.put(url, new ImageEntry(loc, null, new ImageDimensions(width, height)));
                 future.complete(loc);
             });
@@ -185,6 +185,7 @@ public class ImageManager implements AutoCloseable {
     @Override
     public void close() {
         closed = true;
+        executor.close();
         for (ImageEntry entry : cache.values()) {
             if (entry.location != null) {
                 Minecraft.getInstance().getTextureManager().release(entry.location);
@@ -214,7 +215,7 @@ public class ImageManager implements AutoCloseable {
                 IntBuffer channels = stack.mallocInt(1);
                 ByteBuffer pixels = STBImage.stbi_load_from_memory(buffer, w, h, channels, 4);
                 if (pixels == null) {
-                    log("STBImage failed: " + STBImage.stbi_failure_reason());
+                    OmnisearchMod.LOGGER.warn("STBImage failed: {}", STBImage.stbi_failure_reason());
                     return null;
                 }
                 int width = w.get(0);
@@ -235,7 +236,7 @@ public class ImageManager implements AutoCloseable {
                 return ni;
             }
         } catch (Exception e) {
-            log("readWithStb exception: " + e.getMessage());
+            OmnisearchMod.LOGGER.warn("readWithStb exception: {}", e.getMessage());
             return null;
         } finally {
             MemoryUtil.memFree(buffer);
@@ -247,11 +248,11 @@ public class ImageManager implements AutoCloseable {
         try {
             byte[] result = downloader.apply(url);
             if (result == null) {
-                log("downloader returned null for: " + url);
+                OmnisearchMod.LOGGER.warn("downloader returned null for: {}", url);
             }
             return result;
         } catch (Exception e) {
-            log("download failed: " + url + " - " + e.getMessage());
+            OmnisearchMod.LOGGER.warn("download failed: {} - {}", url, e.getMessage());
             return null;
         }
     }
@@ -262,9 +263,4 @@ public class ImageManager implements AutoCloseable {
         @Nullable ImageDimensions dimensions
     ) {}
 
-    private static void log(String msg) {
-        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-            pw.println(System.currentTimeMillis() + " [ImageManager] " + msg);
-        } catch (Exception ignored) {}
-    }
 }

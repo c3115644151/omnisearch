@@ -4,12 +4,8 @@ import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 
 import java.net.URLEncoder;
-import java.io.FileWriter;
-import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -142,18 +138,12 @@ public class McmodHttpClient implements AutoCloseable {
             if (res.statusCode() >= 200 && res.statusCode() < 400) {
                 return res.bodyAsBytes();
             }
-            log("status=" + res.statusCode() + " for: " + url);
+            com.cy311.omnisearch.OmnisearchMod.LOGGER.warn("[McmodHttpClient] status={} for: {}", res.statusCode(), url);
             return null;
         } catch (Exception e) {
-            log("exception=" + e.getClass().getSimpleName() + " msg=" + e.getMessage() + " for: " + url);
+            com.cy311.omnisearch.OmnisearchMod.LOGGER.warn("[McmodHttpClient] exception {} for: {}", e.toString(), url);
             return null;
         }
-    }
-
-    private static void log(String msg) {
-        try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-            pw.println(System.currentTimeMillis() + " [McmodHttpClient] " + msg);
-        } catch (Exception ignored) {}
     }
 
     // ──────────────────────────────────────────────

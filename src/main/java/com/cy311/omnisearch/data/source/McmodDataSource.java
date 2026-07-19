@@ -10,8 +10,7 @@ import com.cy311.omnisearch.data.parser.McmodParser;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.io.FileWriter;
-import java.io.PrintWriter;
+
 
 /**
  * Data source implementation for mcmod.cn.
@@ -115,10 +114,7 @@ public class McmodDataSource implements CaptchaCapableDataSource, AutoCloseable 
                     doc = parser.parseModPage(html, url);
                 }
             } catch (Exception e) {
-                String errMsg = "[McmodDataSource] parseItemPage EXCEPTION: " + e.getMessage();
-                try (PrintWriter pw = new PrintWriter(new FileWriter("omnisearch-debug.log", true))) {
-                    pw.println(System.currentTimeMillis() + " " + errMsg);
-                } catch (Exception ignored) {}
+                com.cy311.omnisearch.OmnisearchMod.LOGGER.error("[McmodDataSource] parseItemPage exception", e);
                 throw e;
             }
             return new ItemPage(pageId, doc.title(), doc.sourceMod(), doc, url);
