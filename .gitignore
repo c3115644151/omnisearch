@@ -24,6 +24,9 @@ versions/*/logs/
 versions/*/bin/
 versions/*/.eclipse/
 versions/*/omnisearch-debug.log
+versions/*/build/
+versions/*/run/
+versions/*/.omnisearch/
 
 # Temporary test artifacts (never commit)
 captcha.html

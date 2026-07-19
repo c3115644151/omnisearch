@@ -1,0 +1,58 @@
+apply plugin: 'net.neoforged.moddev.legacyforge'
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.add '--enable-preview'
+}
+
+legacyForge {
+    version = "${project.minecraft_version}-${project.forge_version}"
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+        }
+        server {
+            server()
+            programArgument '--nogui'
+            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+        }
+        data {
+            data()
+            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').absolutePath, '--existing', file('src/main/resources/').absolutePath
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.DEBUG
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+configurations {
+    localRuntime
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+obfuscation {
+    createRemappingConfiguration configurations.localRuntime
+}
+
+dependencies {
+    add 'localRuntime', 'org.jsoup:jsoup:1.19.1'
+    add 'localRuntime', 'org.sejda.imageio:webp-imageio:0.1.6'
+}
+
+legacyForge.ideSyncTask tasks.named('generateModMetadata')

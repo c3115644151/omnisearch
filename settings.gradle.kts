@@ -5,6 +5,10 @@ pluginManagement {
         maven("https://maven.kikugie.dev/releases")
         maven("https://maven.kikugie.dev/snapshots")
     }
+    plugins {
+        id("net.neoforged.moddev") version "2.0.141"
+        id("net.neoforged.moddev.legacyforge") version "2.0.141"
+    }
 }
 
 plugins {
@@ -17,6 +21,7 @@ stonecutter {
     kotlinController = true
     shared {
         version("1.21.1", "1.21.1")
+        version("1.20.1", "1.20.1")
     }
     create(rootProject)
 }

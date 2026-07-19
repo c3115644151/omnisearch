@@ -27,7 +27,7 @@ public class TooltipEventHandler {
     private static ItemStack lastHoveredStack = ItemStack.EMPTY;
     private static boolean longPressTriggered = false;
 
-    private static final long HOLD_THRESHOLD_MS = 1000; // 1 second hold
+    private static final long HOLD_THRESHOLD_MS = 2000; // 2 second hold
 
     private static SearchRepository repository;
     private static McmodHttpClient httpClient;
@@ -74,7 +74,7 @@ public class TooltipEventHandler {
                 String itemName = stack.getHoverName().getString();
                 Minecraft.getInstance().tell(() ->
                     Minecraft.getInstance().setScreen(
-                        new OmnisearchScreen(getRepository(), httpClient != null ? httpClient::downloadImageBytes : null))
+                        new OmnisearchScreen(getRepository(), httpClient != null ? httpClient::downloadImageBytes : null, itemName))
                 );
             }
         } else {

@@ -24,6 +24,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import org.jetbrains.annotations.Nullable;
 
 
 // verified: Screen, Minecraft.setScreen(), GuiGraphics — standard MC API, stable
@@ -50,11 +51,20 @@ public class OmnisearchScreen extends Screen {
     private int clearCacheFlashTicks = 0;
     private static final int SBW = 300;
 
+    // Optional initial query for hover-to-search
+    @Nullable
+    private final String initialQuery;
+
     public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader) {
+        this(repo, imageDownloader, null);
+    }
+
+    public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader, @Nullable String initialQuery) {
         super(Component.literal("Omnisearch"));
         OmnisearchMod.LOGGER.debug("Screen constructor called");
         this.repo = repo;
         this.imageDownloader = imageDownloader;
+        this.initialQuery = initialQuery;
         this.uiState = OmnisearchWindowState.initial();
     }
 
@@ -71,6 +81,13 @@ public class OmnisearchScreen extends Screen {
         // Captcha input EditBox (hidden until captcha is required)
         captchaInput = new EditBox(font, width / 2 - 120 + 9, 0, 222, 18, Component.literal(""));
         sb.getEditBox().setFocused(true);
+
+        // Auto-submit if opened via hover-to-search with an item name
+        if (initialQuery != null && !initialQuery.isBlank()) {
+            sb.getEditBox().setValue(initialQuery);
+            uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.QueryChanged(initialQuery));
+            submitSearch();
+        }
     }
 
     @Override
@@ -466,6 +483,10 @@ public class OmnisearchScreen extends Screen {
             .thenAccept(results -> Minecraft.getInstance().tell(() -> {
                 if (requestId != searchSeq || !submittedQuery.equals(uiState.search().query())) return;
                 uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.SearchResultsLoaded(results));
+                // Auto-navigate to detail when exactly 1 result (common for item-name search)
+                if (results.size() == 1) {
+                    loadDetail(0);
+                }
             }))
             .exceptionally(ex -> {
                 Minecraft.getInstance().tell(() -> {

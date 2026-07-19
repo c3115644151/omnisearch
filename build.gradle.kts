@@ -1,6 +1,5 @@
 plugins {
     id("java-library")
-    id("net.neoforged.moddev") version "2.0.141"
     id("maven-publish")
 }
 
@@ -9,10 +8,6 @@ group = property("mod_group_id") as String
 
 base {
     archivesName = property("mod_id") as String
-}
-
-java {
-    toolchain.languageVersion = JavaLanguageVersion.of(21)
 }
 
 sourceSets.main {
@@ -24,62 +19,13 @@ sourceSets.main {
 }
 
 repositories {
-    // Additional repositories if needed
-}
-
-neoForge {
-    version = property("neo_version") as String
-
-    parchment {
-        mappingsVersion = property("parchment_mappings_version") as String
-        minecraftVersion = property("parchment_minecraft_version") as String
-    }
-
-    runs {
-        register("client") {
-            type = "client"
-            systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
-        }
-        register("server") {
-            type = "server"
-            programArgument("--nogui")
-            systemProperty("neoforge.enabledGameTestNamespaces", property("mod_id") as String)
-        }
-        register("data") {
-            type = "data"
-            programArguments.addAll(
-                "--mod", property("mod_id") as String,
-                "--all",
-                "--output", file("src/generated/resources/").absolutePath,
-                "--existing", file("src/main/resources/").absolutePath
-            )
-        }
-        configureEach {
-            systemProperty("forge.logging.markers", "REGISTRIES")
-            logLevel = org.slf4j.event.Level.DEBUG
-        }
-    }
-
-    mods {
-        register(property("mod_id") as String) {
-            sourceSet(sourceSets.main.get())
-        }
-    }
-}
-
-configurations {
-    create("localRuntime")
-    named("runtimeClasspath") {
-        extendsFrom(named("localRuntime").get())
-    }
+    mavenLocal()
 }
 
 dependencies {
     implementation("org.jetbrains:annotations:26.0.2")
     implementation("org.jsoup:jsoup:1.19.1")
     implementation("org.sejda.imageio:webp-imageio:0.1.6")
-    add("additionalRuntimeClasspath", "org.jsoup:jsoup:1.19.1")
-    add("additionalRuntimeClasspath", "org.sejda.imageio:webp-imageio:0.1.6")
     testImplementation(platform("org.junit:junit-bom:5.11.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -96,19 +42,29 @@ sourceSets {
     }
 }
 
+val ver = stonecutter.current.version
+
 val generateModMetadata = tasks.register("generateModMetadata", Sync::class) {
-    val replaceProperties = mapOf(
-        "minecraft_version" to project.property("minecraft_version"),
-        "minecraft_version_range" to project.property("minecraft_version_range"),
-        "neo_version" to project.property("neo_version"),
-        "loader_version_range" to project.property("loader_version_range"),
-        "mod_id" to project.property("mod_id"),
-        "mod_name" to project.property("mod_name"),
-        "mod_license" to project.property("mod_license"),
-        "mod_version" to project.property("mod_version"),
-    )
+    val replaceProperties = buildMap {
+        put("minecraft_version", project.property("minecraft_version"))
+        put("minecraft_version_range", project.property("minecraft_version_range"))
+        put("loader_version_range", project.property("loader_version_range"))
+        put("mod_id", project.property("mod_id"))
+        put("mod_name", project.property("mod_name"))
+        put("mod_license", project.property("mod_license"))
+        put("mod_version", project.property("mod_version"))
+        if (ver == "1.20.1") {
+            put("forge_version", project.property("forge_version"))
+        } else {
+            put("neo_version", project.property("neo_version"))
+        }
+    }
     inputs.properties(replaceProperties)
-    from("src/main/templates")
+    if (ver == "1.20.1") {
+        from("versions/1.20.1/templates")
+    } else {
+        from("src/main/templates")
+    }
     into(layout.buildDirectory.dir("generated/resources/modMetadata"))
     expand(replaceProperties)
 }
@@ -116,8 +72,6 @@ val generateModMetadata = tasks.register("generateModMetadata", Sync::class) {
 sourceSets.main {
     resources.srcDir(layout.buildDirectory.dir("generated/resources/modMetadata"))
 }
-
-neoForge.ideSyncTask(generateModMetadata)
 
 tasks.named("processResources") {
     dependsOn(generateModMetadata)
@@ -143,3 +97,7 @@ publishing {
         }
     }
 }
+
+// Load version-specific plugin, Java toolchain, and NeoForge/LegacyForge config
+// MUST be last — requires generateModMetadata task to be registered first
+apply(from = rootProject.file("versions/${ver}/build.gradle"))
