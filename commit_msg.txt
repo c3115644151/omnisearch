@@ -1,8 +1,0 @@
-feat: TAB长按悬停查询视觉反馈（进度环+音效+工具提示）
-
-- feat: HUD进度环叠加层（RegisterGuiLayersEvent）
-- feat: 生成进度环/勾选纹理（32x32 + 16x16 PNG）
-- feat: 长按时物品 tooltip 显示动态进度提示
-- feat: 触发时播放按钮点击音效
-- refactor: TooltipEventHandler 解耦，状态通过 HudOverlayHandler 共享
-- refactor: ClientEntryPoint 注册 GUI 叠加层
