@@ -18,6 +18,7 @@ public record SearchSessionState(
     int currentPage,
     boolean loadingMore,
     boolean hasMore,
+    @Nullable String nextPageUrl,
     @Nullable String modFilter,
     List<SearchHit> unfilteredResults,
     History history
@@ -32,64 +33,69 @@ public record SearchSessionState(
         int selectedResultIndex,
         int currentPage,
         boolean hasMore,
+        @Nullable String nextPageUrl,
         @Nullable String modFilter,
         List<SearchHit> unfilteredResults
     ) {}
 
     public static SearchSessionState initial() {
-        return new SearchSessionState(BodyView.SEARCH, new SearchQuery(""), List.of(), 0, -1, false, 1, false, false, null, List.of(), new History());
+        return new SearchSessionState(BodyView.SEARCH, new SearchQuery(""), List.of(), 0, -1, false, 1, false, false, null, null, List.of(), new History());
     }
 
     public Snapshot snapshot() {
-        return new Snapshot(currentView, query, results, resultsScrollOffset, selectedResultIndex, currentPage, hasMore, modFilter, unfilteredResults);
+        return new Snapshot(currentView, query, results, resultsScrollOffset, selectedResultIndex, currentPage, hasMore, nextPageUrl, modFilter, unfilteredResults);
     }
 
     public SearchSessionState withCurrentView(BodyView currentView) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withQuery(SearchQuery query) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withResults(List<SearchHit> results) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withResultsScrollOffset(int resultsScrollOffset) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withSelectedResultIndex(int selectedResultIndex) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withDraggingScrollbar(boolean draggingScrollbar) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withCurrentPage(int currentPage) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withLoadingMore(boolean loadingMore) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withHasMore(boolean hasMore) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
+    }
+
+    public SearchSessionState withNextPageUrl(@Nullable String nextPageUrl) {
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withModFilter(@Nullable String modFilter) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withUnfilteredResults(List<SearchHit> unfilteredResults) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState withHistory(History history) {
-        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, modFilter, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, results, resultsScrollOffset, selectedResultIndex, draggingScrollbar, currentPage, loadingMore, hasMore, nextPageUrl, modFilter, unfilteredResults, history);
     }
 
     public SearchSessionState restore(Snapshot snapshot, History newHistory) {
@@ -103,6 +109,7 @@ public record SearchSessionState(
             snapshot.currentPage(),
             false,
             snapshot.hasMore(),
+            snapshot.nextPageUrl(),
             snapshot.modFilter(),
             snapshot.unfilteredResults(),
             newHistory
@@ -117,7 +124,7 @@ public record SearchSessionState(
         var filtered = unfilteredResults.stream()
             .filter(h -> modName.equals(h.sourceMod()))
             .toList();
-        return new SearchSessionState(currentView, query, filtered, 0, -1, false, currentPage, loadingMore, hasMore, modName, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, filtered, 0, -1, false, currentPage, loadingMore, hasMore, nextPageUrl, modName, unfilteredResults, history);
     }
 
     /**
@@ -125,7 +132,7 @@ public record SearchSessionState(
      * Keeps unfilteredResults intact so mod filter can be re-applied later.
      */
     public SearchSessionState clearModFilter() {
-        return new SearchSessionState(currentView, query, unfilteredResults, 0, -1, false, currentPage, loadingMore, hasMore, null, unfilteredResults, history);
+        return new SearchSessionState(currentView, query, unfilteredResults, 0, -1, false, currentPage, loadingMore, hasMore, nextPageUrl, null, unfilteredResults, history);
     }
 
     public static final class History {

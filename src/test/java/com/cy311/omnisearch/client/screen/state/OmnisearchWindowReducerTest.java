@@ -32,7 +32,7 @@ class OmnisearchWindowReducerTest {
 
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.QueryChanged("娜迦"));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchSubmitted());
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results, null));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ResultSelected(0));
 
         assertEquals(SearchSessionState.BodyView.DETAIL, state.search().currentView());
@@ -53,7 +53,7 @@ class OmnisearchWindowReducerTest {
         List<SearchHit> results = List.of(new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null));
         ItemPage page = new ItemPage("item/1", "娜迦鳞片", "暮色森林", new Document("title", null, null, List.of()), "https://example.com");
 
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results, null));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ResultSelected(0));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.DetailLoaded(page));
 
@@ -82,7 +82,7 @@ class OmnisearchWindowReducerTest {
             new SearchHit("item/3", "猪巫妖", "item", "诡厄巫法", null)
         );
 
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results, null));
         assertEquals(3, state.search().results().size());
         assertEquals(3, state.search().unfilteredResults().size());
 
@@ -102,7 +102,7 @@ class OmnisearchWindowReducerTest {
             new SearchHit("item/2", "猪巫妖", "item", "诡厄巫法", null)
         );
 
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results, null));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
         assertEquals("暮色森林", state.search().modFilter());
 
@@ -121,7 +121,7 @@ class OmnisearchWindowReducerTest {
         List<SearchHit> initialResults = List.of(
             new SearchHit("item/1", "巫妖", "item", "暮色森林", null)
         );
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(initialResults));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(initialResults, null));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
 
         // New search results come in with mixed mods
@@ -130,7 +130,7 @@ class OmnisearchWindowReducerTest {
             new SearchHit("item/11", "猪巫妖", "item", "诡厄巫法", null),
             new SearchHit("item/12", "巫妖王", "item", "暮色森林", null)
         );
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(newResults));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(newResults, null));
 
         // Only 暮色森林 results should be displayed
         assertEquals(2, state.search().results().size());
@@ -146,7 +146,7 @@ class OmnisearchWindowReducerTest {
             new SearchHit("item/2", "猪巫妖", "item", "诡厄巫法", null)
         );
 
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(results, null));
         state = OmnisearchWindowReducer.reduce(state, new SearchEvent.ModFilterSelected("暮色森林"));
         assertEquals(1, state.search().results().size());
 
@@ -173,8 +173,8 @@ class OmnisearchWindowReducerTest {
             new SearchHit("item/3", "巫妖塔", "item", "暮色森林", null)
         );
 
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(page1));
-        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.MoreResultsLoaded(page2));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.SearchResultsLoaded(page1, "next"));
+        state = OmnisearchWindowReducer.reduce(state, new SearchEvent.MoreResultsLoaded(page2, null));
 
         assertEquals(3, state.search().results().size());
         assertEquals(3, state.search().unfilteredResults().size());

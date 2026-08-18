@@ -26,7 +26,14 @@ class SearchResultsPaneTest {
             .withResults(List.of(
                 new SearchHit("item/1", "娜迦鳞片", "item", "暮色森林", null),
                 new SearchHit("item/2", "月光蠕行者的眼珠", "item", "暮色森林", null),
-                new SearchHit("item/3", "烧焦的树皮", "item", "交错维度", null)
+                new SearchHit("item/3", "烧焦的树皮", "item", "交错维度", null),
+                new SearchHit("item/4", "火焰血", "item", "暮色森林", null),
+                new SearchHit("item/5", "巫妖法杖", "item", "暮色森林", null),
+                new SearchHit("item/6", "幻影头骨", "item", "交错维度", null),
+                new SearchHit("item/7", "云杉原木", "item", "Minecraft", null),
+                new SearchHit("item/8", "云杉木板", "item", "Minecraft", null),
+                new SearchHit("item/9", "去皮云杉原木", "item", "Minecraft", null),
+                new SearchHit("item/10", "巫妖刷怪蛋", "item", "暮色森林", null)
             ));
     }
 
@@ -52,11 +59,39 @@ class SearchResultsPaneTest {
 
     @Test
     void handleScroll_clampsToZero() {
-        // 3 results, height=120 -> visibleRows=7 -> maxScroll=0 -> offset clamped to 0
+        // viewport can show all rows -> offset clamps back to 0
         SearchSessionState state = stateWithResults().withResultsScrollOffset(6);
 
-        SearchSessionState next = pane.handleScroll(state, 1, 120);
+        SearchSessionState next = pane.handleScroll(state, 1, 200);
 
         assertEquals(0, next.resultsScrollOffset());
+    }
+
+    @Test
+    void handleScroll_usesViewportHeightInsteadOfScreenHeight() {
+        SearchSessionState state = stateWithResults();
+
+        SearchSessionState next = pane.handleScroll(state, -1, 48);
+
+        assertTrue(next.resultsScrollOffset() > 0);
+    }
+
+    @Test
+    void handleClick_onScrollbarStartsDragging() {
+        SearchSessionState state = stateWithResults();
+
+        var click = pane.handleClick(state, 20, 40, 220, 48, 238, 52);
+
+        assertTrue(click.handled());
+        assertTrue(click.state().draggingScrollbar());
+    }
+
+    @Test
+    void handleDrag_movesScrollOffsetWhileDragging() {
+        SearchSessionState state = stateWithResults().withDraggingScrollbar(true);
+
+        SearchSessionState next = pane.handleDrag(state, 20, 40, 220, 48, 80);
+
+        assertTrue(next.resultsScrollOffset() > 0);
     }
 }

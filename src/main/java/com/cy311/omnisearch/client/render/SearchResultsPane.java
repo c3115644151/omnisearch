@@ -9,6 +9,8 @@ import net.minecraft.client.gui.GuiGraphics;
 import javax.annotation.Nullable;
 
 public final class SearchResultsPane {
+    private static final int CONTENT_BORDER = 2;
+    private static final int WHEEL_SCROLL_ROWS = 1;
 
     private final ResultListWidget listWidget;
     private final ScrollbarWidget scrollbar = new ScrollbarWidget();
@@ -50,16 +52,17 @@ public final class SearchResultsPane {
             }
         }
 
-        int maxScroll = Math.max(0, state.results().size() - Math.max(1, height / 16));
+        int maxScroll = maxScroll(state.results().size(), height);
         int clampedOffset = Math.max(0, Math.min(state.resultsScrollOffset(), maxScroll));
         return clampedOffset == state.resultsScrollOffset()
             ? state
             : state.withResultsScrollOffset(clampedOffset);
     }
 
-    public SearchSessionState handleScroll(SearchSessionState state, double scrollY, int height) {
-        int maxScroll = Math.max(0, state.results().size() - Math.max(1, height / 16));
-        int newOffset = state.resultsScrollOffset() - (int) Math.round(scrollY) * 3;
+    public SearchSessionState handleScroll(SearchSessionState state, double scrollY, int viewportHeight) {
+        int maxScroll = maxScroll(state.results().size(), viewportHeight);
+        int step = Math.max(1, (int) Math.round(Math.abs(scrollY))) * WHEEL_SCROLL_ROWS;
+        int newOffset = state.resultsScrollOffset() - Integer.signum((int) Math.round(scrollY)) * step;
         int clamped = Math.max(0, Math.min(newOffset, maxScroll));
         return state.withResultsScrollOffset(clamped);
     }
@@ -69,16 +72,15 @@ public final class SearchResultsPane {
             return ClickResult.notHandled(state);
         }
         int scrollbarX = x + width - OmniTheme.SCROLLBAR_WIDTH;
-        if (mx > scrollbarX) {
-            int visibleRows = Math.max(1, height / OmniTheme.LIST_ITEM_HEIGHT);
-            int maxScroll = Math.max(0, state.results().size() - visibleRows);
+        if (mx >= scrollbarX) {
+            int maxScroll = maxScroll(state.results().size(), height);
             if (maxScroll > 0) {
-                float thumbRatio = (float) visibleRows / state.results().size();
-                float frac = scrollbar.clickToFraction((int) my, y + 1, height - 2, thumbRatio);
+                float thumbRatio = thumbRatio(state.results().size(), height);
+                float frac = scrollbar.clickToFraction((int) my, y + 1, trackHeight(height), thumbRatio);
                 int newOffset = Math.round(frac * maxScroll);
                 return new ClickResult(true, -1, null, state.withResultsScrollOffset(newOffset).withDraggingScrollbar(true));
             }
-            return ClickResult.notHandled(state);
+            return new ClickResult(true, -1, null, state.withDraggingScrollbar(false));
         }
 
         // Check if click is on a mod name (source mod area)
@@ -99,11 +101,10 @@ public final class SearchResultsPane {
         if (!state.draggingScrollbar()) {
             return state;
         }
-        int visibleRows = Math.max(1, height / OmniTheme.LIST_ITEM_HEIGHT);
-        int maxScroll = Math.max(0, state.results().size() - visibleRows);
+        int maxScroll = maxScroll(state.results().size(), height);
         if (maxScroll <= 0) return state;
-        float thumbRatio = (float) visibleRows / state.results().size();
-        float frac = scrollbar.clickToFraction((int) my, y + 1, height - 2, thumbRatio);
+        float thumbRatio = thumbRatio(state.results().size(), height);
+        float frac = scrollbar.clickToFraction((int) my, y + 1, trackHeight(height), thumbRatio);
         return state.withResultsScrollOffset(Math.round(frac * maxScroll));
     }
 
@@ -115,5 +116,25 @@ public final class SearchResultsPane {
         public static ClickResult notHandled(SearchSessionState state) {
             return new ClickResult(false, -1, null, state);
         }
+    }
+
+    private static int visibleRows(int viewportHeight) {
+        int contentHeight = Math.max(0, viewportHeight - CONTENT_BORDER);
+        return Math.max(1, contentHeight / OmniTheme.LIST_ITEM_HEIGHT);
+    }
+
+    private static int maxScroll(int resultCount, int viewportHeight) {
+        return Math.max(0, resultCount - visibleRows(viewportHeight));
+    }
+
+    private static float thumbRatio(int resultCount, int viewportHeight) {
+        if (resultCount <= 0) {
+            return 1F;
+        }
+        return (float) visibleRows(viewportHeight) / resultCount;
+    }
+
+    private static int trackHeight(int viewportHeight) {
+        return Math.max(0, viewportHeight - CONTENT_BORDER);
     }
 }

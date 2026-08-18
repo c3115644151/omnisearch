@@ -27,6 +27,7 @@ public final class OmnisearchWindowReducer {
                     .withCurrentPage(1)
                     .withLoadingMore(false)
                     .withHasMore(false)
+                    .withNextPageUrl(null)
                     .withResults(List.of())
                     .withUnfilteredResults(List.of()))
                 .withDetail(current.detail().resetForNewPage())
@@ -34,18 +35,28 @@ public final class OmnisearchWindowReducer {
                     .withLoading(SearchState.LoadingState.LOADING)
                     .withErrorMessage(null));
             case SearchEvent.SearchResultsLoaded r -> {
-                // mcmod.cn returns up to 30 results per page.
-                // Only stop if empty; a partial page might still have more pages.
-                boolean hasMore = !r.results().isEmpty();
+                boolean hasMore = r.nextPageUrl() != null && !r.nextPageUrl().isBlank();
                 String modFilter = current.search().modFilter();
                 List<SearchHit> unfiltered = r.results();
-                List<SearchHit> displayResults = modFilter != null
-                    ? unfiltered.stream().filter(h -> modFilter.equals(h.sourceMod())).toList()
-                    : unfiltered;
+                List<SearchHit> displayResults = unfiltered;
+                if (modFilter != null && !modFilter.isBlank()) {
+                    // Use contains() for looser matching — mcmod.cn's sourceMod may include
+                    // extra info like "更多实用设备 (Extra Utilities)" while the resolved
+                    // mod name from the registry is just "更多实用设备"
+                    displayResults = unfiltered.stream()
+                        .filter(h -> h.sourceMod() != null && h.sourceMod().contains(modFilter))
+                        .toList();
+                    // Fallback: if filter matches nothing, show all results anyway
+                    if (displayResults.isEmpty()) {
+                        displayResults = unfiltered;
+                    }
+                }
                 yield current
                     .withSearch(current.search()
                         .withResults(displayResults)
                         .withUnfilteredResults(unfiltered)
+                        .withCurrentPage(1)
+                        .withNextPageUrl(r.nextPageUrl())
                         .withHasMore(hasMore)
                         .withLoadingMore(false))
                     .withWindow(current.window()
@@ -59,16 +70,22 @@ public final class OmnisearchWindowReducer {
                 newUnfiltered.addAll(oldUnfiltered);
                 newUnfiltered.addAll(r.results());
                 String modFilter = current.search().modFilter();
-                List<SearchHit> displayResults = modFilter != null
-                    ? newUnfiltered.stream().filter(h -> modFilter.equals(h.sourceMod())).toList()
-                    : newUnfiltered;
-                // Only stop pagination when we get an empty page (no more results)
-                boolean hasMore = !r.results().isEmpty();
+                List<SearchHit> displayResults = newUnfiltered;
+                if (modFilter != null && !modFilter.isBlank()) {
+                    displayResults = newUnfiltered.stream()
+                        .filter(h -> h.sourceMod() != null && h.sourceMod().contains(modFilter))
+                        .toList();
+                    if (displayResults.isEmpty()) {
+                        displayResults = newUnfiltered;
+                    }
+                }
+                boolean hasMore = r.nextPageUrl() != null && !r.nextPageUrl().isBlank();
                 yield current
                     .withSearch(current.search()
                         .withResults(displayResults)
                         .withUnfilteredResults(newUnfiltered)
                         .withCurrentPage(current.search().currentPage() + 1)
+                        .withNextPageUrl(r.nextPageUrl())
                         .withHasMore(hasMore)
                         .withLoadingMore(false))
                     .withWindow(current.window()

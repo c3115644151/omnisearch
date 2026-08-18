@@ -63,7 +63,7 @@ class SearchReducerTest {
             .withLoading(SearchState.LoadingState.LOADING);
         var result = SearchReducer.reduce(
             state,
-            new SearchEvent.SearchResultsLoaded(List.of(new SearchHit("item/1", "a", "item", "mod1", null)))
+            new SearchEvent.SearchResultsLoaded(List.of(new SearchHit("item/1", "a", "item", "mod1", null)), null)
         );
         assertNull(result.pendingRequest());
     }

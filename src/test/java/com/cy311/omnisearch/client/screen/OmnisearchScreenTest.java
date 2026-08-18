@@ -27,6 +27,61 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class OmnisearchScreenTest {
 
+    @Test
+    void findAutoOpenIndex_prefersExactScopedMatchForHoverQuery() {
+        List<SearchHit> unfiltered = List.of(
+            new SearchHit("item/1", "巫妖刷怪蛋", "item", "暮色森林", null),
+            new SearchHit("item/2", "巫妖刷怪蛋", "item", "别的模组", null),
+            new SearchHit("item/3", "巫妖", "item", "暮色森林", null)
+        );
+        List<SearchHit> display = List.of(
+            new SearchHit("item/1", "巫妖刷怪蛋", "item", "暮色森林", null),
+            new SearchHit("item/3", "巫妖", "item", "暮色森林", null)
+        );
+
+        int index = OmnisearchScreen.findAutoOpenIndex(display, unfiltered, "巫妖刷怪蛋", "暮色森林", true);
+
+        assertEquals(0, index);
+    }
+
+    @Test
+    void findAutoOpenIndex_returnsListWhenScopedMatchesAreAmbiguous() {
+        List<SearchHit> unfiltered = List.of(
+            new SearchHit("item/1", "巫妖塔", "item", "暮色森林", null),
+            new SearchHit("item/2", "巫妖法杖", "item", "暮色森林", null),
+            new SearchHit("item/3", "巫妖王", "item", "暮色森林", null)
+        );
+
+        int index = OmnisearchScreen.findAutoOpenIndex(unfiltered, unfiltered, "巫妖", "暮色森林", true);
+
+        assertEquals(-1, index);
+    }
+
+    @Test
+    void findAutoOpenIndex_fallsBackToGlobalExactMatchWhenNoScopedResultsExist() {
+        List<SearchHit> hits = List.of(
+            new SearchHit("item/1", "云杉原木", "item", "Minecraft", null),
+            new SearchHit("item/2", "云杉木板", "item", "Minecraft", null),
+            new SearchHit("item/3", "去皮云杉原木", "item", "Minecraft", null)
+        );
+
+        int index = OmnisearchScreen.findAutoOpenIndex(hits, hits, "云杉原木", null, true);
+
+        assertEquals(0, index);
+    }
+
+    @Test
+    void manualSearch_doesNotUseAutoOpenResolution() {
+        List<SearchHit> hits = List.of(
+            new SearchHit("item/1", "巫妖", "item", "暮色森林", null),
+            new SearchHit("item/2", "巫妖", "item", "别的模组", null)
+        );
+
+        int index = OmnisearchScreen.findAutoOpenIndex(hits, hits, "巫妖", null, false);
+
+        assertEquals(-1, index);
+    }
+
     // ── 1. QueryChanged ──────────────────────────────────────────────
 
     @Test
@@ -57,7 +112,7 @@ class OmnisearchScreenTest {
             .withPage(SearchState.Page.RESULTS)
             .withLoading(SearchState.LoadingState.LOADING);
         var result = SearchReducer.reduce(
-            state, new SearchEvent.SearchResultsLoaded(List.of(hit1, hit2))
+            state, new SearchEvent.SearchResultsLoaded(List.of(hit1, hit2), null)
         );
         assertEquals(2, result.results().size());
         assertEquals("Naga Scale", result.results().get(0).name());
@@ -71,7 +126,7 @@ class OmnisearchScreenTest {
             .withPage(SearchState.Page.RESULTS)
             .withLoading(SearchState.LoadingState.LOADING);
         var result = SearchReducer.reduce(
-            state, new SearchEvent.SearchResultsLoaded(List.of())
+            state, new SearchEvent.SearchResultsLoaded(List.of(), null)
         );
         assertTrue(result.results().isEmpty());
         assertEquals(SearchState.LoadingState.IDLE, result.loading());
@@ -206,7 +261,7 @@ class OmnisearchScreenTest {
         assertEquals(SearchState.LoadingState.LOADING, s1.loading());
         assertEquals(SearchState.Page.RESULTS, s1.currentPage());
 
-        var s2 = SearchReducer.reduce(s1, new SearchEvent.SearchResultsLoaded(List.of(hit)));
+        var s2 = SearchReducer.reduce(s1, new SearchEvent.SearchResultsLoaded(List.of(hit), null));
         assertEquals(SearchState.LoadingState.IDLE, s2.loading());
         assertEquals(1, s2.results().size());
         assertEquals("Naga Scale", s2.results().get(0).name());
@@ -257,7 +312,8 @@ class OmnisearchScreenTest {
             .withLoading(SearchState.LoadingState.LOADING)
             .withPendingRequest(new PendingRequest.Search(new SearchQuery("娜迦")));
         var result = SearchReducer.reduce(state, new SearchEvent.SearchResultsLoaded(
-            List.of(new SearchHit("item/1", "a", "item", "mod", null))
+            List.of(new SearchHit("item/1", "a", "item", "mod", null)),
+            null
         ));
         assertNull(result.pendingRequest());
     }

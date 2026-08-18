@@ -22,6 +22,9 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import com.cy311.omnisearch.data.model.SearchHit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import org.jetbrains.annotations.Nullable;
@@ -51,20 +54,30 @@ public class OmnisearchScreen extends Screen {
     private int clearCacheFlashTicks = 0;
     private static final int SBW = 300;
 
-    // Optional initial query for hover-to-search
+    // Optional initial query and mod filter for hover-to-search
     @Nullable
     private final String initialQuery;
+    @Nullable
+    private final String initialModFilter;
+    private final boolean preferDirectHoverResolution;
 
     public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader) {
-        this(repo, imageDownloader, null);
+        this(repo, imageDownloader, null, null);
     }
 
     public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader, @Nullable String initialQuery) {
+        this(repo, imageDownloader, initialQuery, null);
+    }
+
+    public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader,
+                            @Nullable String initialQuery, @Nullable String initialModFilter) {
         super(Component.literal("Omnisearch"));
         OmnisearchMod.LOGGER.debug("Screen constructor called");
         this.repo = repo;
         this.imageDownloader = imageDownloader;
         this.initialQuery = initialQuery;
+        this.initialModFilter = initialModFilter;
+        this.preferDirectHoverResolution = initialQuery != null && !initialQuery.isBlank();
         this.uiState = OmnisearchWindowState.initial();
     }
 
@@ -86,6 +99,9 @@ public class OmnisearchScreen extends Screen {
         if (initialQuery != null && !initialQuery.isBlank()) {
             sb.getEditBox().setValue(initialQuery);
             uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.QueryChanged(initialQuery));
+            if (initialModFilter != null) {
+                uiState = uiState.withSearch(uiState.search().withModFilter(initialModFilter));
+            }
             submitSearch();
         }
     }
@@ -351,7 +367,8 @@ public class OmnisearchScreen extends Screen {
                 uiState = uiState.withSearch(uiState.search().applyModFilter(click.modFilter()));
                 return true;
             }
-            if (click.handled()) {
+            if (click.handled() && click.row() >= 0
+                    && click.row() < uiState.search().results().size()) {
                 loadDetail(click.row());
                 return true;
             }
@@ -378,13 +395,21 @@ public class OmnisearchScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int btn, double dx, double dy) {
-        if (btn == 0 && uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
+        if (btn == 0) {
             FloatingSearchWindow.Bounds panelBounds = floatingWindow.computeBounds(width, height);
             int[] bodyBounds = floatingWindow.getBodyBounds(panelBounds, sb.getTotalHeight());
-            var nextDetail = detailPane.handleDrag(uiState.detail(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], my);
-            if (nextDetail != uiState.detail()) {
-                uiState = uiState.withDetail(nextDetail);
-                return true;
+            if (uiState.search().currentView() == SearchSessionState.BodyView.RESULTS) {
+                var nextSearch = resultsPane.handleDrag(uiState.search(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], my);
+                if (nextSearch != uiState.search()) {
+                    uiState = uiState.withSearch(nextSearch);
+                    return true;
+                }
+            } else if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
+                var nextDetail = detailPane.handleDrag(uiState.detail(), bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3], my);
+                if (nextDetail != uiState.detail()) {
+                    uiState = uiState.withDetail(nextDetail);
+                    return true;
+                }
             }
         }
         return super.mouseDragged(mx, my, btn, dx, dy);
@@ -393,6 +418,7 @@ public class OmnisearchScreen extends Screen {
     @Override
     public boolean mouseReleased(double mx, double my, int btn) {
         if (btn == 0) {
+            uiState = uiState.withSearch(resultsPane.stopDragging(uiState.search()));
             uiState = uiState.withDetail(detailPane.stopDragging(uiState.detail()));
         }
         return super.mouseReleased(mx, my, btn);
@@ -400,21 +426,14 @@ public class OmnisearchScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        FloatingSearchWindow.Bounds panelBounds = floatingWindow.computeBounds(width, height);
+        int[] bodyBounds = floatingWindow.getBodyBounds(panelBounds, sb.getTotalHeight());
         if (uiState.search().currentView() == SearchSessionState.BodyView.RESULTS) {
-            uiState = uiState.withSearch(resultsPane.handleScroll(uiState.search(), scrollY, height));
-            // Auto-load more when scrolling near bottom
-            var s = uiState.search();
-            if (s.hasMore() && !s.loadingMore() && !s.results().isEmpty()) {
-                int visibleRows = Math.max(1, height / 16);
-                int nearBottomThreshold = Math.max(1, visibleRows / 2);
-                if (s.resultsScrollOffset() + visibleRows >= s.results().size() - nearBottomThreshold) {
-                    loadMoreResults();
-                }
-            }
+            uiState = uiState.withSearch(resultsPane.handleScroll(uiState.search(), scrollY, bodyBounds[3]));
             return true;
         }
         if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
-            uiState = uiState.withDetail(detailPane.handleScroll(uiState.detail(), scrollY, height));
+            uiState = uiState.withDetail(detailPane.handleScroll(uiState.detail(), scrollY, bodyBounds[3]));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -441,25 +460,60 @@ public class OmnisearchScreen extends Screen {
         }
     }
 
-    private void loadMoreResults() {
-        var s = uiState.search();
-        int nextPage = s.currentPage() + 1;
-        uiState = uiState.withSearch(s.withLoadingMore(true));
-        long requestId = ++searchSeq;
-        repo.searchMore(s.query(), nextPage)
-            .thenAccept(results -> Minecraft.getInstance().tell(() -> {
-                if (requestId != searchSeq) return;
-                OmnisearchMod.LOGGER.debug("loadMoreResults page={} got {} results", nextPage, results.size());
+    private void eagerLoadRemainingResults(SearchQuery query, long requestId, String nextPageUrl) {
+        if (nextPageUrl == null || nextPageUrl.isBlank()) {
+            Minecraft.getInstance().tell(() -> {
+                if (requestId != searchSeq || !query.equals(uiState.search().query())) {
+                    return;
+                }
+                uiState = uiState.withSearch(
+                    uiState.search()
+                        .withLoadingMore(false)
+                        .withHasMore(false)
+                        .withNextPageUrl(null)
+                );
+            });
+            return;
+        }
+
+        Minecraft.getInstance().tell(() -> {
+            if (requestId != searchSeq || !query.equals(uiState.search().query())) {
+                return;
+            }
+            uiState = uiState.withSearch(uiState.search().withLoadingMore(true));
+        });
+
+        repo.searchMore(nextPageUrl)
+            .thenAccept(batch -> Minecraft.getInstance().tell(() -> {
+                if (requestId != searchSeq || !query.equals(uiState.search().query())) return;
+                OmnisearchMod.LOGGER.debug("eagerLoadRemainingResults url={} got {} results", nextPageUrl, batch.results().size());
                 uiState = OmnisearchWindowReducer.reduce(
                     uiState,
-                    new SearchEvent.MoreResultsLoaded(results)
+                    new SearchEvent.MoreResultsLoaded(batch.results(), batch.nextPageUrl())
                 );
+                if (batch.nextPageUrl() != null && !batch.nextPageUrl().isBlank()) {
+                    eagerLoadRemainingResults(query, requestId, batch.nextPageUrl());
+                }
             }))
             .exceptionally(ex -> {
                 Minecraft.getInstance().tell(() -> {
-                    if (requestId != searchSeq) return;
-                    OmnisearchMod.LOGGER.warn("loadMoreResults failed", ex);
-                    uiState = uiState.withSearch(uiState.search().withLoadingMore(false));
+                    if (requestId != searchSeq || !query.equals(uiState.search().query())) return;
+                    Throwable cause = unwrapCompletionCause(ex);
+                    if (cause instanceof CaptchaRequiredException) {
+                        uiState = OmnisearchWindowReducer.withPendingRequest(
+                            uiState.withSearch(uiState.search().withLoadingMore(false)),
+                            new PendingRequest.SearchMoreUrl(query, nextPageUrl)
+                        );
+                        handleError(cause);
+                        return;
+                    }
+                    OmnisearchMod.LOGGER.warn("eagerLoadRemainingResults failed at url {}", nextPageUrl, cause);
+                    uiState = uiState.withSearch(
+                        uiState.search()
+                            .withLoadingMore(false)
+                            .withHasMore(false)
+                            .withNextPageUrl(null)
+                    );
                 });
                 return null;
             });
@@ -479,13 +533,27 @@ public class OmnisearchScreen extends Screen {
             new SearchEvent.SearchSubmitted()
         );
 
-        searchOp = repo.search(submittedQuery)
-            .thenAccept(results -> Minecraft.getInstance().tell(() -> {
+        searchOp = repo.searchPage(submittedQuery)
+            .thenAccept(batch -> Minecraft.getInstance().tell(() -> {
                 if (requestId != searchSeq || !submittedQuery.equals(uiState.search().query())) return;
-                uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.SearchResultsLoaded(results));
-                // Auto-navigate to detail when exactly 1 result (common for item-name search)
-                if (results.size() == 1) {
-                    loadDetail(0);
+                uiState = OmnisearchWindowReducer.reduce(
+                    uiState,
+                    new SearchEvent.SearchResultsLoaded(batch.results(), batch.nextPageUrl())
+                );
+                if (batch.nextPageUrl() != null && !batch.nextPageUrl().isBlank()) {
+                    eagerLoadRemainingResults(submittedQuery, requestId, batch.nextPageUrl());
+                }
+                if (preferDirectHoverResolution) {
+                    int bestIdx = findAutoOpenIndex(
+                        uiState.search().results(),
+                        uiState.search().unfilteredResults(),
+                        submittedQuery.text(),
+                        uiState.search().modFilter(),
+                        true
+                    );
+                    if (bestIdx >= 0) {
+                        loadDetail(bestIdx);
+                    }
                 }
             }))
             .exceptionally(ex -> {
@@ -553,6 +621,32 @@ public class OmnisearchScreen extends Screen {
                     .thenAccept(result -> Minecraft.getInstance().tell(() -> {
                         if (requestId != searchSeq) return;
                         applyPendingResult(result);
+                        if (result instanceof PendingRequestResult.SearchResults searchResults
+                            && searchResults.nextPageUrl() != null
+                            && !searchResults.nextPageUrl().isBlank()) {
+                            eagerLoadRemainingResults(uiState.search().query(), requestId, searchResults.nextPageUrl());
+                        }
+                    }))
+                    .exceptionally(ex -> {
+                        Minecraft.getInstance().tell(() -> {
+                            if (requestId != searchSeq) return;
+                            handleError(ex);
+                        });
+                        return null;
+                    });
+            }
+            case PendingRequest.SearchMoreUrl searchMore -> {
+                long requestId = ++searchSeq;
+                cancelOp(searchOp);
+                searchOp = repo.resumeAfterCaptcha(pending, captcha, answer)
+                    .thenAccept(result -> Minecraft.getInstance().tell(() -> {
+                        if (requestId != searchSeq) return;
+                        applyPendingResult(result);
+                        if (result instanceof PendingRequestResult.MoreSearchResults moreSearchResults
+                            && moreSearchResults.nextPageUrl() != null
+                            && !moreSearchResults.nextPageUrl().isBlank()) {
+                            eagerLoadRemainingResults(searchMore.query(), requestId, moreSearchResults.nextPageUrl());
+                        }
                     }))
                     .exceptionally(ex -> {
                         Minecraft.getInstance().tell(() -> {
@@ -584,17 +678,22 @@ public class OmnisearchScreen extends Screen {
     private void applyPendingResult(PendingRequestResult result) {
         switch (result) {
             case PendingRequestResult.SearchResults searchResults ->
-                uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.SearchResultsLoaded(searchResults.results()));
+                uiState = OmnisearchWindowReducer.reduce(
+                    uiState,
+                    new SearchEvent.SearchResultsLoaded(searchResults.results(), searchResults.nextPageUrl())
+                );
+            case PendingRequestResult.MoreSearchResults moreSearchResults ->
+                uiState = OmnisearchWindowReducer.reduce(
+                    uiState,
+                    new SearchEvent.MoreResultsLoaded(moreSearchResults.results(), moreSearchResults.nextPageUrl())
+                );
             case PendingRequestResult.DetailPage detailPage ->
                 uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.DetailLoaded(detailPage.page()));
         }
     }
 
     private void handleError(Throwable ex) {
-        Throwable cause = ex;
-        while (cause instanceof CompletionException && cause.getCause() != null) {
-            cause = cause.getCause();
-        }
+        Throwable cause = unwrapCompletionCause(ex);
         if (cause instanceof CaptchaRequiredException cre) {
             OmnisearchMod.LOGGER.info("CAPTCHA required, showing dialog");
             closeCaptchaImage();
@@ -610,9 +709,143 @@ public class OmnisearchScreen extends Screen {
         }
     }
 
+    private static Throwable unwrapCompletionCause(Throwable ex) {
+        Throwable cause = ex;
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause;
+    }
+
     private static void cancelOp(CompletableFuture<?> op) {
         if (op != null && !op.isDone()) {
             op.cancel(true);
         }
+    }
+
+    static int findAutoOpenIndex(
+        List<SearchHit> displayResults,
+        List<SearchHit> unfilteredResults,
+        String queryText,
+        @Nullable String modFilter,
+        boolean preferScopedMatch
+    ) {
+        if (!preferScopedMatch || displayResults.isEmpty()) {
+            return -1;
+        }
+
+        String query = queryText == null ? "" : queryText;
+        String normalizedQuery = normalizeLookupText(query);
+        List<SearchHit> sourcePool = unfilteredResults == null || unfilteredResults.isEmpty() ? displayResults : unfilteredResults;
+        List<SearchHit> scopedResults = filterByMod(sourcePool, modFilter);
+
+        if (!scopedResults.isEmpty()) {
+            int scopedExact = findUniqueExactMatchIndex(displayResults, scopedResults, query, normalizedQuery);
+            if (scopedExact >= 0) {
+                return scopedExact;
+            }
+
+            int scopedClose = findUniqueCloseMatchIndex(displayResults, scopedResults, normalizedQuery);
+            if (scopedClose >= 0) {
+                return scopedClose;
+            }
+
+            return -1;
+        }
+        int globalExact = findUniqueExactMatchIndex(displayResults, displayResults, query, normalizedQuery);
+        if (globalExact >= 0) {
+            return globalExact;
+        }
+        return -1;
+    }
+
+    private static int findUniqueExactMatchIndex(
+        List<SearchHit> displayResults,
+        List<SearchHit> candidates,
+        String rawQuery,
+        String normalizedQuery
+    ) {
+        int rawExactIndex = findUniqueCandidateIndex(displayResults, candidates, hit -> rawQuery.equals(hit.name()));
+        if (rawExactIndex >= 0) {
+            return rawExactIndex;
+        }
+        return findUniqueCandidateIndex(displayResults, candidates,
+            hit -> normalizedQuery.equals(normalizeLookupText(hit.name())));
+    }
+
+    private static int findUniqueCloseMatchIndex(
+        List<SearchHit> displayResults,
+        List<SearchHit> candidates,
+        String normalizedQuery
+    ) {
+        return findUniqueCandidateIndex(displayResults, candidates, hit -> {
+            String normalizedName = normalizeLookupText(hit.name());
+            if (normalizedName.isBlank() || normalizedQuery.isBlank()) {
+                return false;
+            }
+            return normalizedName.startsWith(normalizedQuery)
+                || normalizedQuery.startsWith(normalizedName)
+                || normalizedName.contains(normalizedQuery)
+                || normalizedQuery.contains(normalizedName);
+        });
+    }
+
+    private static int findUniqueCandidateIndex(
+        List<SearchHit> displayResults,
+        List<SearchHit> candidates,
+        java.util.function.Predicate<SearchHit> predicate
+    ) {
+        SearchHit matched = null;
+        for (SearchHit candidate : candidates) {
+            if (!predicate.test(candidate)) {
+                continue;
+            }
+            if (matched != null) {
+                return -1;
+            }
+            matched = candidate;
+        }
+        return matched == null ? -1 : indexOfHit(displayResults, matched.id());
+    }
+
+    private static int indexOfHit(List<SearchHit> hits, String id) {
+        for (int i = 0; i < hits.size(); i++) {
+            if (hits.get(i).id().equals(id)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static List<SearchHit> filterByMod(List<SearchHit> hits, @Nullable String modFilter) {
+        if (modFilter == null || modFilter.isBlank()) {
+            return List.of();
+        }
+        List<SearchHit> filtered = new ArrayList<>();
+        for (SearchHit hit : hits) {
+            if (modNameMatches(hit.sourceMod(), modFilter)) {
+                filtered.add(hit);
+            }
+        }
+        return filtered;
+    }
+
+    private static boolean modNameMatches(@Nullable String sourceMod, @Nullable String modFilter) {
+        if (sourceMod == null || sourceMod.isBlank() || modFilter == null || modFilter.isBlank()) {
+            return false;
+        }
+        String normalizedSource = normalizeLookupText(sourceMod);
+        String normalizedFilter = normalizeLookupText(modFilter);
+        return normalizedSource.contains(normalizedFilter) || normalizedFilter.contains(normalizedSource);
+    }
+
+    private static String normalizeLookupText(@Nullable String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value
+            .toLowerCase(java.util.Locale.ROOT)
+            .replaceAll("[\\s_\\-·:：()（）\\[\\]【】]+", "")
+            .trim();
     }
 }
