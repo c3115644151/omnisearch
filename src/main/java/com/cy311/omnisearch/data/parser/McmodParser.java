@@ -21,11 +21,11 @@ import java.util.regex.Pattern;
  */
 public class McmodParser {
 
-    private static final Pattern HREF_ITEM_PATTERN = Pattern.compile("/(item|class)/(\\d+)");
     private static final Pattern LINK_TEXT_PATTERN = Pattern.compile("^(.*?)\\s*-\\s*(.*)$");
     private static final Pattern CATEGORY_PATTERN = Pattern.compile("^\\(([^)]+)\\)\\s*(.*)$");
     private static final Pattern PAREN_ENGLISH = Pattern.compile("\\s*\\([^)]*\\)");
     private static final Pattern COLOR_PATTERN = Pattern.compile("color\\s*:\\s*(#[0-9a-fA-F]{3,8})\\b");
+    private static final Pattern PAGE_PARAM_PATTERN = Pattern.compile("[?&]page=(\\d+)");
 
     /**
      * Normalizes a URL by adding https: protocol to protocol-relative URLs.
@@ -72,43 +72,67 @@ public class McmodParser {
         }
 
         org.jsoup.nodes.Document doc = Jsoup.parse(html);
-        Elements links = doc.select(
-            ".search-result-list .result-item .head a[href*='/item/'], " +
-            ".search-result-list .result-item .head a[href*='/class/']"
-        );
-
-        if (links.isEmpty()) {
+        Elements resultItems = doc.select(".search-result-list .result-item");
+        if (resultItems.isEmpty()) {
+            OmnisearchMod.LOGGER.debug("[McmodParser] no .result-item nodes found in search html");
             return Collections.emptyList();
         }
 
         List<SearchHit> results = new ArrayList<>();
-        for (Element link : links) {
-            String href = link.attr("href");
-            Matcher m = HREF_ITEM_PATTERN.matcher(href);
-            if (!m.find()) {
+        int missingHeadCount = 0;
+        int missingLinkCount = 0;
+        int unmatchedHrefCount = 0;
+        List<String> unmatchedHrefSamples = new ArrayList<>();
+        for (Element resultItem : resultItems) {
+            Element headDiv = resultItem.selectFirst(".head");
+            // Pick the primary title link. mcmod.cn renders a category icon link inside
+            // .head > .class-category before the real result link; that icon has empty text
+            // and an href containing "/category/" and must be skipped. Prefer the first
+            // non-empty, non-category link inside .head; fall back to the whole result block.
+            Element link = findPrimaryLink(
+                headDiv != null ? headDiv.select("a[href]") : resultItem.select("a[href]"));
+            if (link == null) {
+                link = findPrimaryLink(resultItem.select("a[href]"));
+            }
+            if (link == null) {
+                missingLinkCount++;
                 continue;
             }
 
-            String type = m.group(1);   // "item" or "class"
-            String id = type + "/" + m.group(2);
+            String href = link.attr("href");
+            String[] ref = extractItemRef(href);
+            if (ref == null) {
+                unmatchedHrefCount++;
+                if (unmatchedHrefSamples.size() < 3) {
+                    unmatchedHrefSamples.add(href);
+                }
+                continue;
+            }
+
+            String type = ref[0];   // "item" or "class"
+            String id = type + "/" + ref[1];
 
             // Category tag is a text node in the parent .head div, before the <a> tag.
             // e.g. "(自然生成) <a>巫妖塔 - 暮色森林</a>"
             String category = null;
-            Element headDiv = link.parent();
-            if (headDiv != null) {
-                String headText = headDiv.text();
-                Matcher catMatcher = CATEGORY_PATTERN.matcher(headText);
-                if (catMatcher.matches()) {
-                    category = catMatcher.group(1).trim();
-                }
+            if (headDiv == null) {
+                missingHeadCount++;
+            }
+            String headText = (headDiv != null ? headDiv.text() : link.text()).trim();
+            Matcher catMatcher = CATEGORY_PATTERN.matcher(headText);
+            if (catMatcher.matches()) {
+                category = catMatcher.group(1).trim();
             }
 
-            String linkText = link.text().trim();
-            String name = linkText;
+            String name = link.text().trim();
             String sourceMod = null;
 
-            Matcher textMatcher = LINK_TEXT_PATTERN.matcher(linkText);
+            String parseText = headText;
+            if (category != null && !category.isBlank()) {
+                parseText = CATEGORY_PATTERN.matcher(headText).replaceFirst("$2").trim();
+            }
+
+            Matcher textMatcher = LINK_TEXT_PATTERN.matcher(parseText);
             if (textMatcher.matches()) {
                 name = textMatcher.group(1).trim();
                 sourceMod = textMatcher.group(2).trim();
@@ -123,7 +147,113 @@ public class McmodParser {
             results.add(new SearchHit(id, name, type, sourceMod, category));
         }
 
+        if (unmatchedHrefCount > 0) {
+            OmnisearchMod.LOGGER.warn(
+                "[McmodParser] could not extract id from {} of {} result-item links (samples={}) — mcmod.cn link format may have changed",
+                unmatchedHrefCount,
+                resultItems.size(),
+                unmatchedHrefSamples
+            );
+        } else {
+            OmnisearchMod.LOGGER.debug(
+                "[McmodParser] parsed {} search hits from {} result items (missingHead={}, missingLink={})",
+                results.size(),
+                resultItems.size(),
+                missingHeadCount,
+                missingLinkCount
+            );
+        }
+
         return results;
+    }
+
+    /**
+     * Selects the primary result link from a candidate set, skipping the category-icon link
+     * that mcmod.cn renders before the real result title link.
+     * <p>
+     * The category icon is an {@code <a>} with empty visible text whose href contains
+     * {@code "/category/"} (e.g. {@code /class/category/3-1.html}). Selecting it would yield
+     * an empty name and a bogus id. We therefore prefer links whose href points at a real
+     * {@code /item/} or {@code /class/} target (not a category listing) with non-blank text,
+     * then fall back to the first non-category item/class link regardless of text.
+     *
+     * @return the primary link, or null if none qualifies
+     */
+    static Element findPrimaryLink(Elements links) {
+        if (links == null || links.isEmpty()) {
+            return null;
+        }
+        Element fallback = null;
+        for (Element a : links) {
+            String href = a.attr("href");
+            if (href == null || href.isBlank()) continue;
+            String lower = href.toLowerCase();
+            boolean isItemOrClass = lower.contains("/item/") || lower.contains("/class/");
+            boolean isCategory = lower.contains("/category/");
+            if (!isItemOrClass || isCategory) continue;
+            if (!a.text().isBlank()) {
+                return a;
+            }
+            if (fallback == null) {
+                fallback = a;
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * <p>
+     * The link selector already guarantees the href contains "/item/" or "/class/", so we
+     * locate that marker and read the target token up to the first separator
+     * ({@code / ? # &}, whitespace, or quote), stripping a trailing ".html". This is robust
+     * against any suffix mcmod.cn may append (e.g. tracking params joined with {@code &}),
+     * which a strict terminator-anchored regex would silently reject.
+     *
+     * @return a 2-element String array {type, id}, or null if the marker is absent / token empty
+     */
+    static String[] extractItemRef(String href) {
+        if (href == null || href.isBlank()) {
+            return null;
+        }
+        String lower = href.toLowerCase();
+        int marker = -1;
+        String type = null;
+        int itemIdx = lower.indexOf("/item/");
+        int classIdx = lower.indexOf("/class/");
+        if (itemIdx >= 0 && (classIdx < 0 || itemIdx < classIdx)) {
+            marker = itemIdx + "/item/".length();
+            type = "item";
+        } else if (classIdx >= 0) {
+            marker = classIdx + "/class/".length();
+            type = "class";
+        } else {
+            return null;
+        }
+        int end = marker;
+        while (end < href.length()) {
+            char c = href.charAt(end);
+            if (c == '/' || c == '?' || c == '#' || c == '&' || c == ';'
+                    || c == ' ' || c == '"' || c == '\'' || c == '<' || c == '>') {
+                break;
+            }
+            end++;
+        }
+        String id = href.substring(marker, end);
+        if (id.toLowerCase().endsWith(".html")) {
+            id = id.substring(0, id.length() - ".html".length());
+        }
+        if (id.isBlank()) {
+            return null;
+        }
+        return new String[]{type, id};
+    }
+
+    public SearchPageBatch parseSearchPage(String html, String pageUrl) {
+        if (html == null || html.isBlank()) {
+            return new SearchPageBatch(List.of(), null);
+        }
+        org.jsoup.nodes.Document doc = Jsoup.parse(html, pageUrl);
+        return new SearchPageBatch(parseSearchResults(html), extractNextSearchPageUrl(doc, pageUrl));
     }
 
     // ──────────────────────────────────────────────
@@ -804,5 +934,116 @@ public class McmodParser {
             }
         }
         return java.util.Collections.emptyList();
+    }
+
+    /**
+     * Extracts the next search page URL.
+     * <p>
+     * Rather than using the raw pagination href (which mcmod.cn emits as a query-only
+     * relative URL with unencoded Chinese, e.g. {@code ?key=巫妖&filter=3&page=2} - a URL
+     * that the server rejects when requested verbatim), this extracts the target page
+     * NUMBER from the pagination DOM and rebuilds the URL from the current (properly
+     * encoded) pageUrl by swapping in the page parameter.
+     */
+    private static String extractNextSearchPageUrl(org.jsoup.nodes.Document doc, String pageUrl) {
+        int currentPage = extractPageNumber(pageUrl);
+        int nextPage = -1;
+
+        // Preferred: mcmod.cn renders <a class="page-link" data-page="N"> in .pagination
+        for (Element a : doc.select("a.page-link[data-page]")) {
+            int p = parsePageToken(a.attr("data-page"));
+            if (p > currentPage && (nextPage == -1 || p < nextPage)) {
+                nextPage = p;
+            }
+        }
+
+        // Fallback 1: classic bootstrap-style .pagination with active page-item
+        if (nextPage == -1) {
+            Element activeNext = doc.selectFirst(".pagination .page-item.active + .page-item > a[href]");
+            if (activeNext != null) {
+                int p = parsePageToken(activeNext.attr("data-page"));
+                if (p == -1) p = parsePageParam(activeNext.absUrl("href"));
+                if (p == -1) p = parsePageParam(activeNext.attr("href"));
+                if (p > currentPage) {
+                    nextPage = p;
+                }
+            }
+        }
+
+        // Fallback 2: scan any search links for the smallest page number beyond current
+        if (nextPage == -1) {
+            for (Element link : doc.select("a[href]")) {
+                String href = link.absUrl("href");
+                if (href == null || href.isBlank()) {
+                    href = normalizeUrl(link.attr("href"));
+                }
+                if (href == null || href.isBlank()) {
+                    continue;
+                }
+                if (!href.contains("/s?") && !href.contains("?key=")) {
+                    continue;
+                }
+                int p = parsePageParam(href);
+                if (p > currentPage && (nextPage == -1 || p < nextPage)) {
+                    nextPage = p;
+                }
+            }
+        }
+
+        return nextPage == -1 ? null : withPageParam(pageUrl, nextPage);
+    }
+
+    /**
+     * Rebuilds a page URL with the given page number, replacing an existing page=
+     * parameter or appending one. The base pageUrl is already properly encoded.
+     */
+    private static String withPageParam(String url, int page) {
+        // PAGE_PARAM_PATTERN matches "[?&]page=(\d+)" - keep the separator, swap the digits
+        Matcher m = PAGE_PARAM_PATTERN.matcher(url);
+        if (m.find()) {
+            String sepAndKey = m.group(0).replaceAll("\\d+$", "");
+            return new StringBuilder(url).replace(m.start(), m.end(), sepAndKey + page).toString();
+        }
+        return url + "&page=" + page;
+    }
+
+    /** Parses a numeric page token like "2"; returns -1 if not a positive integer. */
+    private static int parsePageToken(String token) {
+        if (token == null || token.isBlank()) {
+            return -1;
+        }
+        try {
+            int p = Integer.parseInt(token.trim());
+            return p > 0 ? p : -1;
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    /** Extracts the page= query parameter value; returns -1 if absent (unlike extractPageNumber). */
+    private static int parsePageParam(String url) {
+        if (url == null || url.isBlank()) {
+            return -1;
+        }
+        Matcher matcher = PAGE_PARAM_PATTERN.matcher(url);
+        if (!matcher.find()) {
+            return -1;
+        }
+        return parsePageToken(matcher.group(1));
+    }
+
+    private static int extractPageNumber(String url) {
+        if (url == null || url.isBlank()) {
+            return 1;
+        }
+        Matcher matcher = PAGE_PARAM_PATTERN.matcher(url);
+        if (!matcher.find()) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(matcher.group(1));
+        } catch (NumberFormatException ignored) {
+            return 1;
+        }
     }
 }

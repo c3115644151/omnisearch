@@ -54,15 +54,21 @@ public class SearchRepository implements AutoCloseable {
             });
     }
 
-    /**
-     * Fetches additional pages of search results (page 2+).
-     * Not cached (paginated results are transient).
-     */
-    public CompletableFuture<List<SearchHit>> searchMore(SearchQuery query, int page) {
+    public CompletableFuture<SearchPageBatch> searchPage(SearchQuery query) {
         if (primarySource instanceof McmodDataSource source) {
-            return source.searchMore(query, page);
+            return source.searchPage(query);
         }
-        return CompletableFuture.completedFuture(List.of());
+        return search(query).thenApply(results -> new SearchPageBatch(results, null));
+    }
+
+    /**
+     * Fetches an additional search result page by the real next-page URL from mcmod.
+     */
+    public CompletableFuture<SearchPageBatch> searchMore(String pageUrl) {
+        if (primarySource instanceof McmodDataSource source) {
+            return source.searchMore(pageUrl);
+        }
+        return CompletableFuture.completedFuture(new SearchPageBatch(List.of(), null));
     }
 
     public CompletableFuture<ItemPage> getPage(String pageId) {
@@ -101,6 +107,22 @@ public class SearchRepository implements AutoCloseable {
         return CompletableFuture.failedFuture(new UnsupportedOperationException("CAPTCHA not supported by this data source"));
     }
 
+    public CompletableFuture<List<SearchHit>> submitCaptchaForSearchPage(SearchQuery originalQuery, int page, CaptchaContext captcha, String answer) {
+        if (primarySource instanceof CaptchaCapableDataSource source) {
+            String pageUrl = page < 2 ? null : com.cy311.omnisearch.data.client.McmodHttpClient.buildSearchUrl(originalQuery.text(), page);
+            return source.submitCaptchaForSearchPage(originalQuery, pageUrl, captcha, answer)
+                .thenApply(SearchPageBatch::results);
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("CAPTCHA not supported by this data source"));
+    }
+
+    public CompletableFuture<SearchPageBatch> submitCaptchaForSearchPage(SearchQuery originalQuery, String pageUrl, CaptchaContext captcha, String answer) {
+        if (primarySource instanceof CaptchaCapableDataSource source) {
+            return source.submitCaptchaForSearchPage(originalQuery, pageUrl, captcha, answer);
+        }
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("CAPTCHA not supported by this data source"));
+    }
+
     /**
      * Submits a CAPTCHA answer and retries the original page request.
      */
@@ -120,8 +142,18 @@ public class SearchRepository implements AutoCloseable {
             return CompletableFuture.failedFuture(new IllegalArgumentException("Missing pending request"));
         }
         return switch (pending) {
-            case PendingRequest.Search search -> submitCaptcha(search.query(), captcha, answer)
-                .thenApply(PendingRequestResult.SearchResults::new);
+            case PendingRequest.Search search -> submitCaptchaForSearchPage(
+                search.query(),
+                com.cy311.omnisearch.data.client.McmodHttpClient.buildSearchUrl(search.query().text()),
+                captcha,
+                answer
+            ).thenApply(batch -> new PendingRequestResult.SearchResults(batch.results(), batch.nextPageUrl()));
+            case PendingRequest.SearchMoreUrl searchMore -> submitCaptchaForSearchPage(
+                searchMore.query(),
+                searchMore.pageUrl(),
+                captcha,
+                answer
+            ).thenApply(batch -> new PendingRequestResult.MoreSearchResults(batch.results(), batch.nextPageUrl()));
             case PendingRequest.Detail detail -> submitCaptchaForPage(detail.pageId(), captcha, answer)
                 .thenApply(PendingRequestResult.DetailPage::new);
         };

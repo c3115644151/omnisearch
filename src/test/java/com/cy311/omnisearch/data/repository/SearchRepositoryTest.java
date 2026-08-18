@@ -4,6 +4,7 @@ import com.cy311.omnisearch.data.model.ItemPage;
 import com.cy311.omnisearch.data.model.CaptchaContext;
 import com.cy311.omnisearch.data.model.PendingRequest;
 import com.cy311.omnisearch.data.model.PendingRequestResult;
+import com.cy311.omnisearch.data.model.SearchPageBatch;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.DocNodeAdapterFactory;
@@ -209,7 +210,6 @@ class SearchRepositoryTest {
 
         assertInstanceOf(PendingRequestResult.SearchResults.class, resumed);
         assertEquals(results, ((PendingRequestResult.SearchResults) resumed).results());
-        assertEquals(results, cache.getSearchResults(query));
         assertTrue(mockDS.submitSearchCaptchaCalled);
         }
     }
@@ -235,6 +235,25 @@ class SearchRepositoryTest {
         assertEquals(page, ((PendingRequestResult.DetailPage) resumed).page());
         assertEquals(page, cache.getPage(pageId));
         assertTrue(mockDS.submitPageCaptchaCalled);
+        }
+    }
+
+    @Test
+    void resumeAfterCaptcha_searchMoreRequest_returnsPageResultsWithoutCachingPageOne() throws Exception {
+        var query = new SearchQuery("captcha query");
+        var results = List.of(new SearchHit("id3", "page2", "mod", "source", null));
+        var mockDS = new MockCaptchaDataSource(results, null);
+        try (var repo = new SearchRepository(cache, mockDS)) {
+
+        var resumed = repo.resumeAfterCaptcha(
+            new PendingRequest.SearchMoreUrl(query, "https://search.mcmod.cn/s?key=captcha+query&page=2"),
+            new CaptchaContext("url", "id", "answerUrl"),
+            "42"
+        ).get();
+
+        assertInstanceOf(PendingRequestResult.MoreSearchResults.class, resumed);
+        assertEquals(results, ((PendingRequestResult.MoreSearchResults) resumed).results());
+        assertTrue(mockDS.submitSearchMoreCaptchaCalled);
         }
     }
 
@@ -313,6 +332,7 @@ class SearchRepositoryTest {
 
     static class MockCaptchaDataSource extends MockDataSource implements CaptchaCapableDataSource {
         boolean submitSearchCaptchaCalled;
+        boolean submitSearchMoreCaptchaCalled;
         boolean submitPageCaptchaCalled;
 
         MockCaptchaDataSource(List<SearchHit> searchResults, ItemPage itemPage) {
@@ -323,6 +343,16 @@ class SearchRepositoryTest {
         public CompletableFuture<List<SearchHit>> submitCaptcha(SearchQuery originalQuery, CaptchaContext captcha, String answer) {
             submitSearchCaptchaCalled = true;
             return CompletableFuture.completedFuture(searchResults);
+        }
+
+        @Override
+        public CompletableFuture<SearchPageBatch> submitCaptchaForSearchPage(SearchQuery originalQuery, String pageUrl, CaptchaContext captcha, String answer) {
+            if (pageUrl != null && pageUrl.contains("page=2")) {
+                submitSearchMoreCaptchaCalled = true;
+            } else {
+                submitSearchCaptchaCalled = true;
+            }
+            return CompletableFuture.completedFuture(new SearchPageBatch(searchResults, null));
         }
 
         @Override

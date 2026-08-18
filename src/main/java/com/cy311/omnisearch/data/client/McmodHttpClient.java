@@ -40,7 +40,14 @@ public class McmodHttpClient implements AutoCloseable {
         if (query == null || query.isBlank()) {
             return CompletableFuture.completedFuture("");
         }
-        return executor.submit(() -> doGet(buildSearchUrl(query, page)));
+        return executor.submit(() -> doGetWithRateLimitRetry(buildSearchUrl(query, page)));
+    }
+
+    public CompletableFuture<String> getHtml(String url) {
+        if (url == null || url.isBlank()) {
+            return CompletableFuture.completedFuture("");
+        }
+        return executor.submit(() -> doGetWithRateLimitRetry(url));
     }
 
     public CompletableFuture<String> getItemPage(String itemId) {
@@ -97,8 +104,14 @@ public class McmodHttpClient implements AutoCloseable {
     }
 
     public static String buildSearchUrl(String query, int page) {
+        // Default to mcmod.cn's comprehensive search (filter=3), matching the website's
+        // default search. The mold param is not sent.
+        return buildSearchUrl(query, page, 3);
+    }
+
+    public static String buildSearchUrl(String query, int page, int filter) {
         String encoded = URLEncoder.encode(query, StandardCharsets.UTF_8);
-        String url = SEARCH_URL + "?key=" + encoded + "&filter=3";
+        String url = SEARCH_URL + "?key=" + encoded + "&filter=" + filter;
         if (page > 1) {
             url += "&page=" + page;
         }
@@ -194,5 +207,45 @@ public class McmodHttpClient implements AutoCloseable {
         } catch (Exception e) {
             throw new RuntimeException("GET request failed: " + url, e);
         }
+    }
+
+    /**
+     * Performs a GET with automatic retry on mcmod.cn's rate-limit interstitial page.
+     * <p>
+     * When search requests arrive in quick succession (e.g. the mod auto-loading every
+     * paginated page), mcmod.cn responds with a page containing "搜索太频繁，请稍后再试"
+     * (0 results, no pagination). Retrying after a short delay lets the throttle relax.
+     * The delay grows with each attempt so a long throttle does not hammer the server.
+     */
+    private String doGetWithRateLimitRetry(String url) {
+        int attempt = 0;
+        while (true) {
+            String html = doGet(url);
+            if (attempt >= 6 || html == null || !isRateLimitedPage(html)) {
+                return html;
+            }
+            attempt++;
+            long waitMs = 500L * (1L << (attempt - 1)); // 500ms, 1s, 2s, 4s, 8s, 16s
+            com.cy311.omnisearch.OmnisearchMod.LOGGER.warn(
+                "[McmodHttpClient] rate-limited by mcmod.cn (attempt {}); retrying {} in {}ms",
+                attempt, url, waitMs
+            );
+            try {
+                Thread.sleep(waitMs);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return html;
+            }
+        }
+    }
+
+    /** Detects mcmod.cn's "search too frequently" interstitial page. */
+    static boolean isRateLimitedPage(String html) {
+        if (html == null || html.isBlank()) {
+            return false;
+        }
+        // The throttle page is short (~20KB, normal results are ~45-50KB) and carries the
+        // "搜索太频繁，请稍后再试" warning. Require both to avoid mis-detecting legit pages.
+        return html.length() < 40000 && html.contains("搜索太频繁");
     }
 }

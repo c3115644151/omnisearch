@@ -1,8 +1,10 @@
 package com.cy311.omnisearch.data.source;
 
+import com.cy311.omnisearch.OmnisearchMod;
 import com.cy311.omnisearch.data.client.McmodHttpClient;
 import com.cy311.omnisearch.data.model.CaptchaContext;
 import com.cy311.omnisearch.data.model.ItemPage;
+import com.cy311.omnisearch.data.model.SearchPageBatch;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
@@ -58,30 +60,39 @@ public class McmodDataSource implements CaptchaCapableDataSource, AutoCloseable 
 
     @Override
     public CompletableFuture<List<SearchHit>> search(SearchQuery query) {
+        return searchPage(query).thenApply(SearchPageBatch::results);
+    }
+
+    public CompletableFuture<SearchPageBatch> searchPage(SearchQuery query) {
         if (query == null || query.text() == null || query.text().isBlank()) {
-            return CompletableFuture.completedFuture(List.of());
+            return CompletableFuture.completedFuture(new SearchPageBatch(List.of(), null));
         }
-        return client.search(query.text())
-            .thenApply(html -> {
-                if (html.isBlank()) return List.<SearchHit>of();
-                checkCaptcha(html, McmodHttpClient.buildSearchUrl(query.text()));
-                return parser.parseSearchResults(html);
+        // filter=3 is mcmod.cn's comprehensive search (the website's default). The mold
+        // param is not sent. Fall back to filter=0 only if the primary query yields nothing.
+        String primaryUrl = McmodHttpClient.buildSearchUrl(query.text(), 1, 3);
+        String fallbackUrl = McmodHttpClient.buildSearchUrl(query.text(), 1, 0);
+        return fetchSearchPage(primaryUrl, "primary")
+            .thenCompose(batch -> {
+                if (!batch.results().isEmpty() || (batch.nextPageUrl() != null && !batch.nextPageUrl().isBlank())) {
+                    return CompletableFuture.completedFuture(batch);
+                }
+                OmnisearchMod.LOGGER.warn(
+                    "[McmodDataSource] primary search returned no results for query='{}'; retrying fallback url={}",
+                    query.text(),
+                    fallbackUrl
+                );
+                return fetchSearchPage(fallbackUrl, "fallback");
             });
     }
 
     /**
-     * Fetches a specific page of search results (page 2+, for pagination).
+     * Fetches a specific page of search results using the real next-page URL parsed from the site.
      */
-    public CompletableFuture<List<SearchHit>> searchMore(SearchQuery query, int page) {
-        if (query == null || query.text() == null || query.text().isBlank() || page < 2) {
-            return CompletableFuture.completedFuture(List.of());
+    public CompletableFuture<SearchPageBatch> searchMore(String pageUrl) {
+        if (pageUrl == null || pageUrl.isBlank()) {
+            return CompletableFuture.completedFuture(new SearchPageBatch(List.of(), null));
         }
-        return client.search(query.text(), page)
-            .thenApply(html -> {
-                if (html.isBlank()) return List.<SearchHit>of();
-                checkCaptcha(html, McmodHttpClient.buildSearchUrl(query.text(), page));
-                return parser.parseSearchResults(html);
-            });
+        return fetchSearchPage(pageUrl, "next");
     }
 
     @Override
@@ -147,10 +158,15 @@ public class McmodDataSource implements CaptchaCapableDataSource, AutoCloseable 
      * We then retry the search with the now-valid cookies.
      */
     public CompletableFuture<List<SearchHit>> submitCaptcha(SearchQuery originalQuery, CaptchaContext captcha, String answer) {
+        return submitCaptchaForSearchPage(originalQuery, McmodHttpClient.buildSearchUrl(originalQuery.text()), captcha, answer)
+            .thenApply(SearchPageBatch::results);
+    }
+
+    @Override
+    public CompletableFuture<SearchPageBatch> submitCaptchaForSearchPage(SearchQuery originalQuery, String pageUrl, CaptchaContext captcha, String answer) {
         return client.submitCaptcha(captcha.answerUrl(), answer, captcha.hiddenFields())
             .thenCompose(html -> {
-                if (html == null || html.isBlank()) return CompletableFuture.completedFuture(List.of());
-                // Check if response is another captcha page (wrong answer)
+                if (html == null || html.isBlank()) return CompletableFuture.completedFuture(new SearchPageBatch(List.of(), null));
                 if (captchaHandler.isCaptchaPage(html)) {
                     CaptchaContext newCtx = captchaHandler.parseCaptcha(html, captcha.answerUrl());
                     if (newCtx != null) {
@@ -159,19 +175,32 @@ public class McmodDataSource implements CaptchaCapableDataSource, AutoCloseable 
                         throw new RuntimeException("检测到 mcmod.cn 验证码，但解析失败，可能页面结构已更改。");
                     }
                 }
-                // Success: cookies are now valid, retry the search
-                return client.search(originalQuery.text())
-                    .thenApply(searchHtml -> {
-                        if (searchHtml.isBlank()) return List.<SearchHit>of();
-                        // Guard against getting captcha again
-                        if (captchaHandler.isCaptchaPage(searchHtml)) {
-                            CaptchaContext newCtx = captchaHandler.parseCaptcha(searchHtml, McmodHttpClient.buildSearchUrl(originalQuery.text()));
-                            if (newCtx != null) {
-                                throw new CaptchaRequiredException(newCtx);
-                            }
-                        }
-                        return parser.parseSearchResults(searchHtml);
-                    });
+                String targetUrl = (pageUrl == null || pageUrl.isBlank())
+                    ? McmodHttpClient.buildSearchUrl(originalQuery.text())
+                    : pageUrl;
+                return fetchSearchPage(targetUrl, "captcha-resume");
+            });
+    }
+
+    private CompletableFuture<SearchPageBatch> fetchSearchPage(String url, String phase) {
+        return client.getHtml(url)
+            .thenApply(html -> {
+                int htmlLength = html == null ? -1 : html.length();
+                OmnisearchMod.LOGGER.debug("[McmodDataSource] fetchSearchPage phase={} url={} htmlLength={}", phase, url, htmlLength);
+                if (html == null || html.isBlank()) {
+                    OmnisearchMod.LOGGER.warn("[McmodDataSource] empty search html phase={} url={}", phase, url);
+                    return new SearchPageBatch(List.of(), null);
+                }
+                checkCaptcha(html, url);
+                SearchPageBatch batch = parser.parseSearchPage(html, url);
+                OmnisearchMod.LOGGER.info(
+                    "[McmodDataSource] parsed search phase={} url={} results={} nextPageUrl={}",
+                    phase,
+                    url,
+                    batch.results().size(),
+                    batch.nextPageUrl()
+                );
+                return batch;
             });
     }
 

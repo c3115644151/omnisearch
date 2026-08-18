@@ -17,6 +17,7 @@ class McmodHttpClientTest {
     @Test
     void buildSearchUrlNormal() {
         String url = McmodHttpClient.buildSearchUrl("娜迦");
+        // filter=3 is mcmod.cn's comprehensive search (website default); the mold param is omitted
         assertEquals("https://search.mcmod.cn/s?key=%E5%A8%9C%E8%BF%A6&filter=3", url);
     }
 
@@ -259,5 +260,36 @@ class McmodHttpClientTest {
             CompletableFuture<String> future = client.submitCaptcha("not-a-valid-url", "test", null);
             assertThrows(CompletionException.class, future::join);
         }
+    }
+
+    // ══════════════════════════════════════════════
+    // Rate-limit page detection
+    // ══════════════════════════════════════════════
+
+    @Test
+    void rateLimitedPageDetected() {
+        // mcmod.cn throttles rapid pagination fetches with a short page carrying
+        // "搜索太频繁，请稍后再试。" (normal results pages are ~45-50KB)
+        String shortPage = "<html><body><div class=\"warning\">搜索太频繁，请稍后再试。</div></body></html>";
+        assertTrue(McmodHttpClient.isRateLimitedPage(shortPage));
+    }
+
+    @Test
+    void normalSearchPageNotDetectedAsRateLimited() {
+        // A normal (larger) results page must never be treated as rate-limited
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 30; i++) {
+            sb.append("<div class=\"result-item\"><div class=\"head\"><a href=\"/item/")
+              .append(i).append(".html\">测试物品</a></div></div>");
+        }
+        String normalPage = "<html><body><div class=\"search-result-list\">" + sb + "</div></body></html>";
+        assertFalse(McmodHttpClient.isRateLimitedPage(normalPage));
+    }
+
+    @Test
+    void nullOrEmptyPageNotRateLimited() {
+        assertFalse(McmodHttpClient.isRateLimitedPage(null));
+        assertFalse(McmodHttpClient.isRateLimitedPage(""));
+        assertFalse(McmodHttpClient.isRateLimitedPage("   "));
     }
 }

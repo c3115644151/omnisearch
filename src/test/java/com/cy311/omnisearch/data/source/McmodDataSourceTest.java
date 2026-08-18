@@ -3,6 +3,7 @@ package com.cy311.omnisearch.data.source;
 import com.cy311.omnisearch.data.client.McmodHttpClient;
 import com.cy311.omnisearch.data.model.CaptchaContext;
 import com.cy311.omnisearch.data.model.ItemPage;
+import com.cy311.omnisearch.data.model.SearchPageBatch;
 import com.cy311.omnisearch.data.model.SearchHit;
 import com.cy311.omnisearch.data.model.SearchQuery;
 import com.cy311.omnisearch.data.model.document.Document;
@@ -86,6 +87,37 @@ class McmodDataSourceTest {
         assertTrue(results.isEmpty());
     }
 
+    @Test
+    void search_fallsBackToBroaderFilterWhenPrimaryReturnsNoResults() throws Exception {
+        McmodHttpClient mockClient = mock(McmodHttpClient.class);
+        McmodParser mockParser = mock(McmodParser.class);
+        McmodCaptchaHandler realHandler = new McmodCaptchaHandler();
+        try (McmodDataSource ds = new McmodDataSource(mockClient, mockParser, realHandler)) {
+
+        String primaryUrl = McmodHttpClient.buildSearchUrl("巫妖", 1, 3);
+        String fallbackUrl = McmodHttpClient.buildSearchUrl("巫妖", 1, 0);
+        String emptyHtml = "<html><body><div class=\"search-result-list\"></div></body></html>";
+        String fallbackHtml = "<html><body><div class=\"search-result-list\"><div class=\"result-item\"></div></div></body></html>";
+        SearchPageBatch emptyBatch = new SearchPageBatch(List.of(), null);
+        SearchPageBatch fallbackBatch = new SearchPageBatch(
+            List.of(new SearchHit("item/1", "巫妖", "item", "暮色森林", null)),
+            null
+        );
+
+        when(mockClient.getHtml(primaryUrl)).thenReturn(CompletableFuture.completedFuture(emptyHtml));
+        when(mockClient.getHtml(fallbackUrl)).thenReturn(CompletableFuture.completedFuture(fallbackHtml));
+        when(mockParser.parseSearchPage(emptyHtml, primaryUrl)).thenReturn(emptyBatch);
+        when(mockParser.parseSearchPage(fallbackHtml, fallbackUrl)).thenReturn(fallbackBatch);
+
+        SearchPageBatch result = ds.searchPage(new SearchQuery("巫妖")).get();
+
+        assertEquals(1, result.results().size());
+        assertEquals("item/1", result.results().get(0).id());
+        verify(mockClient).getHtml(primaryUrl);
+        verify(mockClient).getHtml(fallbackUrl);
+        }
+    }
+
     // ══════════════════════════════════════════════
     // getPage - edge cases (no network required)
     // ══════════════════════════════════════════════
@@ -129,13 +161,13 @@ class McmodDataSourceTest {
         String searchHtml = "<html><body><div class=\"result\">结果</div></body></html>";
         when(mockClient.submitCaptcha(anyString(), anyString(), any()))
             .thenReturn(CompletableFuture.completedFuture("redirect-body"));
-        when(mockClient.search(anyString()))
+        when(mockClient.getHtml(anyString()))
             .thenReturn(CompletableFuture.completedFuture(searchHtml));
 
         List<SearchHit> expectedHits = List.of(
             new SearchHit("item/1", "测试物品", "item", "测试模组", null));
-        when(mockParser.parseSearchResults(anyString()))
-            .thenReturn(expectedHits);
+        when(mockParser.parseSearchPage(anyString(), anyString()))
+            .thenReturn(new SearchPageBatch(expectedHits, null));
 
         CaptchaContext captcha = new CaptchaContext(
             "data:image/png;base64,abc", "图中有多少个苦力怕",
@@ -147,7 +179,7 @@ class McmodDataSourceTest {
 
         // Assert
         assertEquals(expectedHits, result);
-        verify(mockParser).parseSearchResults(searchHtml);
+        verify(mockParser).parseSearchPage(eq(searchHtml), anyString());
         }
     }
 
