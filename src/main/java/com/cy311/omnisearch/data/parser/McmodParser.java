@@ -7,6 +7,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.select.Elements;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,7 +26,29 @@ public class McmodParser {
     private static final Pattern CATEGORY_PATTERN = Pattern.compile("^\\(([^)]+)\\)\\s*(.*)$");
     private static final Pattern PAREN_ENGLISH = Pattern.compile("\\s*\\([^)]*\\)");
     private static final Pattern COLOR_PATTERN = Pattern.compile("color\\s*:\\s*(#[0-9a-fA-F]{3,8})\\b");
+    private static final Pattern RGB_COLOR_PATTERN = Pattern.compile(
+        "color\\s*:\\s*rgba?\\(\\s*(\\d+(?:\\.\\d+)?%?)\\s*,\\s*(\\d+(?:\\.\\d+)?%?)\\s*,\\s*(\\d+(?:\\.\\d+)?%?)\\s*(?:,\\s*(\\d+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?%)\\s*)?\\)",
+        Pattern.CASE_INSENSITIVE);
+    private static final Pattern HSL_COLOR_PATTERN = Pattern.compile(
+        "color\\s*:\\s*hsla?\\(\\s*(\\d+(?:\\.\\d+)?)\\s*,\\s*(\\d+(?:\\.\\d+)?)%\\s*,\\s*(\\d+(?:\\.\\d+)?)%\\s*(?:,\\s*(\\d+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?%)\\s*)?\\)",
+        Pattern.CASE_INSENSITIVE);
+    private static final Pattern TEXT_ALIGN_PATTERN = Pattern.compile("text-align\\s*:\\s*(\\w+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TEXT_INDENT_PATTERN = Pattern.compile("text-indent\\s*:\\s*([^;]+)", Pattern.CASE_INSENSITIVE);
     private static final Pattern PAGE_PARAM_PATTERN = Pattern.compile("[?&]page=(\\d+)");
+
+    /** Common named CSS colors → hex. mcmod.cn uses these sparingly; keep the set small. */
+    private static final java.util.Map<String, String> NAMED_COLORS = java.util.Map.of(
+        "red", "#FF0000",
+        "green", "#008000",
+        "blue", "#0000FF",
+        "gray", "#808080",
+        "grey", "#808080",
+        "white", "#FFFFFF",
+        "black", "#000000",
+        "yellow", "#FFFF00",
+        "orange", "#FFA500",
+        "purple", "#800080"
+    );
 
     /**
      * Normalizes a URL by adding https: protocol to protocol-relative URLs.
@@ -453,7 +476,36 @@ public class McmodParser {
                 if (children.isEmpty()) {
                     yield Collections.emptyList();
                 }
-                yield java.util.List.of(new ParagraphNode(children));
+                // Two sources of first-line indent on mcmod.cn:
+                //  1. CSS text-indent:2em (site-native, e.g. Naga page)
+                //  2. Editor-typed leading spaces (most pages — editors type 2+ spaces).
+                // MC's font renders ASCII space with ~zero width, so typed spaces must be
+                // converted to a real indent, otherwise the paragraph looks unindented.
+                boolean indent = hasFirstLineIndent(el.attr("style"));
+                if (!indent && children.get(0) instanceof TextNode tn) {
+                    String text = tn.getText();
+                    int i = 0;
+                    while (i < text.length()) {
+                        char c = text.charAt(i);
+                        if (c == ' ' || c == '　' || c == '\t') { // ASCII space, ideographic space, tab
+                            i++;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Editor-typed indent: ≥2 ASCII spaces, or any ideographic space / tab.
+                    int asciiSpaces = 0;
+                    for (int k = 0; k < i; k++) {
+                        if (text.charAt(k) == ' ') asciiSpaces++;
+                    }
+                    boolean typedIndent = (asciiSpaces >= 2) || text.substring(0, i).contains("　") || text.substring(0, i).contains("\t");
+                    if (typedIndent) {
+                        indent = true;
+                        // Strip the typed whitespace; the layout applies a fixed 2em indent.
+                        children.set(0, new TextNode(text.substring(i)));
+                    }
+                }
+                yield java.util.List.of(new ParagraphNode(children, indent));
             }
             case "table" -> {
                 // Check if this table contains only images (gallery table)
@@ -803,18 +855,106 @@ public class McmodParser {
     }
 
     /**
-     * Extracts a hex color from a CSS style attribute value.
-     * E.g. "color:#FFAA00" → "#FFAA00", "color: red" → null for named colors.
+     * Extracts a color from a CSS style attribute value, returning it as "#RRGGBB" or
+     * "#RRGGBBAA" so downstream rendering can parse a single hex string.
+     * <p>
+     * Supports hex (#fff, #ffffff), rgb()/rgba(), hsl()/hsla(), and common named colors.
+     * mcmod.cn uses rgb(255, 0, 0) for red warnings and #888 for gray notes — both are
+     * now captured (previously only hex matched, so red warnings were silently dropped).
+     *
+     * @return a hex color string, or null if no color is present/parseable
      */
+    @Nullable
     private String extractColor(String style) {
         if (style == null || style.isBlank()) {
             return null;
         }
-        Matcher m = COLOR_PATTERN.matcher(style);
-        if (m.find()) {
-            return m.group(1);
+        // rgb()/rgba()
+        Matcher rgb = RGB_COLOR_PATTERN.matcher(style);
+        if (rgb.find()) {
+            int r = clampChannel(rgb.group(1));
+            int g = clampChannel(rgb.group(2));
+            int b = clampChannel(rgb.group(3));
+            String aStr = rgb.group(4);
+            if (aStr != null && !aStr.isBlank()) {
+                int a = Math.max(0, Math.min(255, Math.round(Float.parseFloat(aStr) * 255)));
+                return String.format("#%02X%02X%02X%02X", r, g, b, a);
+            }
+            return String.format("#%02X%02X%02X", r, g, b);
+        }
+        // hsl()/hsla()
+        Matcher hsl = HSL_COLOR_PATTERN.matcher(style);
+        if (hsl.find()) {
+            float h = Float.parseFloat(hsl.group(1));
+            float s = Float.parseFloat(hsl.group(2)) / 100f;
+            float l = Float.parseFloat(hsl.group(3)) / 100f;
+            int[] hslRgb = hslToRgb(h, s, l);
+            String aStr = hsl.group(4);
+            if (aStr != null && !aStr.isBlank()) {
+                int a = Math.max(0, Math.min(255, Math.round(Float.parseFloat(aStr) * 255)));
+                return String.format("#%02X%02X%02X%02X", hslRgb[0], hslRgb[1], hslRgb[2], a);
+            }
+            return String.format("#%02X%02X%02X", hslRgb[0], hslRgb[1], hslRgb[2]);
+        }
+        // hex
+        Matcher hex = COLOR_PATTERN.matcher(style);
+        if (hex.find()) {
+            return hex.group(1);
+        }
+        // named colors
+        for (var entry : NAMED_COLORS.entrySet()) {
+            if (style.matches("(?s).*\\bcolor\\s*:\\s*" + entry.getKey() + "\\b.*")) {
+                return entry.getValue();
+            }
         }
         return null;
+    }
+
+    private static int clampChannel(String s) {
+        try {
+            String v = s.trim();
+            if (v.endsWith("%")) {
+                return Math.round(Float.parseFloat(v.substring(0, v.length() - 1)) * 255 / 100f);
+            }
+            return Math.max(0, Math.min(255, (int) Math.round(Float.parseFloat(v))));
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static int[] hslToRgb(float h, float s, float l) {
+        float c = (1 - Math.abs(2 * l - 1)) * s;
+        float x = c * (1 - Math.abs((h / 60f) % 2 - 1));
+        float m = l - c / 2;
+        float r = 0, g = 0, b = 0;
+        if (h < 60) { r = c; g = x; }
+        else if (h < 120) { r = x; g = c; }
+        else if (h < 180) { g = c; b = x; }
+        else if (h < 240) { g = x; b = c; }
+        else if (h < 300) { r = x; b = c; }
+        else { r = c; b = x; }
+        return new int[]{
+            Math.round((r + m) * 255),
+            Math.round((g + m) * 255),
+            Math.round((b + m) * 255)
+        };
+    }
+
+    /** Extracts text-align from a CSS style attribute. */
+    @Nullable
+    private static String extractTextAlign(String style) {
+        if (style == null || style.isBlank()) return null;
+        Matcher m = TEXT_ALIGN_PATTERN.matcher(style);
+        return m.find() ? m.group(1) : null;
+    }
+
+    /** True if the style contains a first-line indent of 2em (mcmod paragraph norm). */
+    private static boolean hasFirstLineIndent(String style) {
+        if (style == null || style.isBlank()) return false;
+        Matcher m = TEXT_INDENT_PATTERN.matcher(style);
+        if (!m.find()) return false;
+        String v = m.group(1).trim().toLowerCase();
+        return v.equals("2em") || v.equals("2em;");
     }
 
     /**

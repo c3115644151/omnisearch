@@ -173,13 +173,18 @@ public class DocumentRenderer {
             : node.textColor != -1
                 ? node.textColor
                 : OmniTheme.TEXT_WHITE;
-        if (node.isBold) {
-            // Use Component API for bold: Minecraft renders bold via glyph widening,
-            // which works for both ASCII and CJK characters. Shadow-based bold
-            // (drawing text twice with offset) is invisible for dense CJK bitmaps.
-            Component component = Component.literal(node.text)
-                .withStyle(Style.EMPTY.withBold(true));
-            gui.drawString(font, component, rx, ry, color, false);
+
+        // Build a Component carrying all inline styles. Minecraft's Style renders bold
+        // (via glyph widening, works for CJK), italic (oblique; CJK glyphs stay upright,
+        // matching vanilla behavior), underline and strikethrough (drawn over any text).
+        boolean anyStyle = node.isBold || node.isItalic || node.isUnderline || node.isStrikethrough;
+        if (anyStyle) {
+            Style style = Style.EMPTY
+                .withBold(node.isBold)
+                .withItalic(node.isItalic)
+                .withUnderlined(node.isUnderline)
+                .withStrikethrough(node.isStrikethrough);
+            gui.drawString(font, Component.literal(node.text).withStyle(style), rx, ry, color, false);
         } else {
             gui.drawString(font, node.text, rx, ry, color, false);
         }

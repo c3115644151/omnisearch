@@ -44,6 +44,9 @@ public class LayoutEngine {
         @Nullable String imageUrl,
         @Nullable String alt,
         boolean bold,
+        boolean italic,
+        boolean underline,
+        boolean strikethrough,
         int color,
         @Nullable String linkUrl
     ) {}
@@ -185,6 +188,8 @@ public class LayoutEngine {
         para.y = currentY;
 
         int paragraphWidth = Math.max(1, contentWidth);
+        // mcmod.cn body paragraphs use CSS text-indent:2em; render as a first-line indent.
+        int firstLineIndent = node.isFirstLineIndent() ? metrics.lineHeight() * 2 : 0;
 
         // Extract ImageNode children and layout them as block images
         List<DocNode> nonImageChildren = new ArrayList<>();
@@ -197,7 +202,7 @@ public class LayoutEngine {
         }
 
         List<InlineFragment> fragments = collectInlineFragments(nonImageChildren, null);
-        int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x, currentY, paragraphWidth);
+        int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x, currentY, paragraphWidth, firstLineIndent);
         para.h = usedHeight + paragraphSpacing;
         para.w = paragraphWidth;
         currentY += para.h;
@@ -209,10 +214,15 @@ public class LayoutEngine {
     }
 
     private LayoutNode layoutInline(String text, boolean styled, boolean bold, int color) {
+        return layoutInline(text, styled, bold, false, false, false, color);
+    }
+
+    private LayoutNode layoutInline(String text, boolean styled, boolean bold, boolean italic,
+                                    boolean underline, boolean strikethrough, int color) {
         // Wrap bare inline text using the paragraph layout infrastructure so that
         // overlong text wraps instead of being truncated.
         LayoutType fragType = styled ? LayoutType.STYLED_TEXT : LayoutType.TEXT;
-        InlineFragment fragment = new InlineFragment(fragType, text, null, null, bold, color, null);
+        InlineFragment fragment = new InlineFragment(fragType, text, null, null, bold, italic, underline, strikethrough, color, null);
 
         LayoutNode para = new LayoutNode(LayoutType.PARAGRAPH);
         para.x = contentX;
@@ -511,6 +521,9 @@ public class LayoutEngine {
     private LayoutNode layoutStyledText(StyledTextNode node) {
         TextStyle style = node.getStyle();
         boolean bold = style != null && style.bold();
+        boolean italic = style != null && style.italic();
+        boolean underline = style != null && style.underline();
+        boolean strikethrough = style != null && style.strikethrough();
         int color = -1;
         if (style != null && style.color() != null && !style.color().isEmpty()) {
             try {
@@ -519,7 +532,7 @@ public class LayoutEngine {
                 if (color <= 0xFFFFFF) color |= 0xFF000000; // add alpha if missing
             } catch (NumberFormatException ignored) {}
         }
-        return layoutInline(node.getText(), true, bold, color);
+        return layoutInline(node.getText(), true, bold, italic, underline, strikethrough, color);
     }
 
     private int layoutInlineFragmentsIntoParagraph(
@@ -529,12 +542,29 @@ public class LayoutEngine {
         int startY,
         int maxWidth
     ) {
+        return layoutInlineFragmentsIntoParagraph(paragraph, fragments, startX, startY, maxWidth, 0);
+    }
+
+    /**
+     * Lays out inline fragments into a wrapping paragraph. When {@code firstLineIndent} &gt;
+     * 0, the first line starts indented from {@code startX}; wrapped lines return to
+     * {@code startX}. Used to render mcmod.cn's CSS text-indent:2em body paragraphs.
+     */
+    private int layoutInlineFragmentsIntoParagraph(
+        LayoutNode paragraph,
+        List<InlineFragment> fragments,
+        int startX,
+        int startY,
+        int maxWidth,
+        int firstLineIndent
+    ) {
         if (fragments.isEmpty()) {
             return metrics.lineHeight();
         }
 
         List<PendingInline> line = new ArrayList<>();
-        int lineX = startX;
+        int lineOriginX = startX + firstLineIndent; // first line may be indented
+        int lineX = lineOriginX;
         int lineY = startY;
         int lineHeight = Math.max(1, metrics.lineHeight());
 
@@ -543,7 +573,8 @@ public class LayoutEngine {
                 int iconSize = Math.max(1, metrics.lineHeight() - 1);
                 int advance = iconSize + 1;
                 if (lineX + advance > startX + maxWidth && !line.isEmpty()) {
-                    lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                    lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
+                    lineOriginX = startX;
                     lineX = startX;
                     lineHeight = Math.max(1, metrics.lineHeight());
                 }
@@ -567,7 +598,8 @@ public class LayoutEngine {
                         lineHeight = Math.max(lineHeight, Math.max(1, metrics.lineHeight()));
                     }
                     // Force line break
-                    lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                    lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
+                    lineOriginX = startX;
                     lineX = startX;
                     lineHeight = Math.max(1, metrics.lineHeight());
                     remaining = remaining.substring(nlIdx + 1);
@@ -576,7 +608,8 @@ public class LayoutEngine {
 
                 int available = (startX + maxWidth) - lineX;
                 if (available <= 0 && !line.isEmpty()) {
-                    lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                    lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
+                    lineOriginX = startX;
                     lineX = startX;
                     lineHeight = Math.max(1, metrics.lineHeight());
                     continue;
@@ -585,7 +618,8 @@ public class LayoutEngine {
                 int fitLength = maxFittingPrefixLength(remaining, Math.max(1, available));
                 if (fitLength == 0) {
                     if (!line.isEmpty()) {
-                        lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                        lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
+                        lineOriginX = startX;
                         lineX = startX;
                         lineHeight = Math.max(1, metrics.lineHeight());
                         continue;
@@ -601,7 +635,8 @@ public class LayoutEngine {
                 remaining = remaining.substring(fitLength);
 
                 if (!remaining.isEmpty()) {
-                    lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+                    lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
+                    lineOriginX = startX;
                     lineX = startX;
                     lineHeight = Math.max(1, metrics.lineHeight());
                 }
@@ -609,7 +644,7 @@ public class LayoutEngine {
         }
 
         if (!line.isEmpty()) {
-            lineY = flushLine(paragraph, line, startX, lineY, lineHeight);
+            lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
         }
         return Math.max(Math.max(1, metrics.lineHeight()), lineY - startY);
     }
@@ -622,6 +657,9 @@ public class LayoutEngine {
             LayoutNode node = new LayoutNode(fragment.type, fragment.text, fragment.imageUrl, fragment.linkUrl, fragment.alt)
                 .at(x, itemY, pending.width(), pending.height());
             if (fragment.bold) node.withBold(true);
+            if (fragment.italic) node.withItalic(true);
+            if (fragment.underline) node.withUnderline(true);
+            if (fragment.strikethrough) node.withStrikethrough(true);
             if (fragment.color != -1) node.withColor(fragment.color);
             paragraph.addInline(node);
             x += pending.advance();
@@ -635,17 +673,20 @@ public class LayoutEngine {
         for (DocNode node : nodes) {
             if (node instanceof TextNode tn) {
                 if (!tn.getText().isEmpty()) {
-                    result.add(new InlineFragment(LayoutType.TEXT, tn.getText(), null, null, false, -1, inheritedLinkUrl));
+                    result.add(new InlineFragment(LayoutType.TEXT, tn.getText(), null, null, false, false, false, false, -1, inheritedLinkUrl));
                 }
             } else if (node instanceof StyledTextNode stn) {
                 TextStyle style = stn.getStyle();
                 boolean bold = style != null && style.bold();
+                boolean italic = style != null && style.italic();
+                boolean underline = style != null && style.underline();
+                boolean strikethrough = style != null && style.strikethrough();
                 int color = resolveTextColor(style);
                 if (!stn.getText().isEmpty()) {
-                    result.add(new InlineFragment(LayoutType.STYLED_TEXT, stn.getText(), null, null, bold, color, inheritedLinkUrl));
+                    result.add(new InlineFragment(LayoutType.STYLED_TEXT, stn.getText(), null, null, bold, italic, underline, strikethrough, color, inheritedLinkUrl));
                 }
             } else if (node instanceof ImageInlineNode iin) {
-                result.add(new InlineFragment(LayoutType.INLINE_IMAGE, null, iin.getUrl(), iin.getAlt(), false, -1, inheritedLinkUrl));
+                result.add(new InlineFragment(LayoutType.INLINE_IMAGE, null, iin.getUrl(), iin.getAlt(), false, false, false, false, -1, inheritedLinkUrl));
             } else if (node instanceof LinkNode ln) {
                 result.addAll(collectInlineFragments(ln.getChildren(), ln.getUrl()));
             } else if (node instanceof ParagraphNode pn) {
@@ -662,6 +703,9 @@ public class LayoutEngine {
             fragment.imageUrl,
             fragment.alt,
             fragment.bold,
+            fragment.italic,
+            fragment.underline,
+            fragment.strikethrough,
             fragment.color,
             fragment.linkUrl
         );

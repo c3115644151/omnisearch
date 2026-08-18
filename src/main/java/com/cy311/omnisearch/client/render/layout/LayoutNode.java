@@ -19,6 +19,9 @@ public class LayoutNode {
     @Nullable public final String alt;
     public int headingLevel;        // 1-3 for HEADING nodes
     public boolean isBold;          // for STYLED_TEXT nodes
+    public boolean isItalic;        // for STYLED_TEXT nodes
+    public boolean isUnderline;     // for STYLED_TEXT nodes
+    public boolean isStrikethrough; // for STYLED_TEXT nodes
     public int textColor = -1;      // ARGB color (if set)
     public boolean isHeader;        // for TABLE cells that are headers
     public final List<LayoutNode> children;
@@ -71,6 +74,21 @@ public class LayoutNode {
 
     public LayoutNode withBold(boolean bold) {
         this.isBold = bold;
+        return this;
+    }
+
+    public LayoutNode withItalic(boolean italic) {
+        this.isItalic = italic;
+        return this;
+    }
+
+    public LayoutNode withUnderline(boolean underline) {
+        this.isUnderline = underline;
+        return this;
+    }
+
+    public LayoutNode withStrikethrough(boolean strikethrough) {
+        this.isStrikethrough = strikethrough;
         return this;
     }
 

@@ -898,4 +898,58 @@ class DocumentRendererTest {
         verify(gui).blit(eq(mockLoc), anyInt(), anyInt(), anyFloat(), anyFloat(),
             anyInt(), anyInt(), anyInt(), anyInt());
     }
+
+    // ===========================================================
+    // Inline text styles (italic / underline / strikethrough)
+    // ===========================================================
+
+    @Test
+    void styledTextNode_italicRendersViaComponentStyle() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        var node = new StyledTextNode("Italic", TextStyle.ITALIC);
+        var doc = new Document("test", null, null, List.of(node));
+
+        renderDocument(renderer, gui, doc);
+
+        var calls = RenderTestUtil.getDrawCalls(gui);
+        assertEquals(1, calls.size());
+        assertEquals("Italic", calls.get(0).text());
+        assertNotNull(calls.get(0).style());
+        assertTrue(calls.get(0).style().isItalic(), "italic text must be drawn with italic Style");
+    }
+
+    @Test
+    void styledTextNode_underlineAndStrikethroughRenderViaComponentStyle() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        var style = new TextStyle(false, false, true, true, null); // underline + strikethrough
+        var node = new StyledTextNode("Deleted", style);
+        var doc = new Document("test", null, null, List.of(node));
+
+        renderDocument(renderer, gui, doc);
+
+        var calls = RenderTestUtil.getDrawCalls(gui);
+        assertEquals(1, calls.size());
+        assertNotNull(calls.get(0).style());
+        assertTrue(calls.get(0).style().isUnderlined(), "underline must be drawn via Style");
+        assertTrue(calls.get(0).style().isStrikethrough(), "strikethrough must be drawn via Style");
+    }
+
+    @Test
+    void styledTextNode_plainTextHasNoComponentStyle() {
+        var gui = RenderTestUtil.createMockGuiGraphics();
+        var font = RenderTestUtil.createMockFont();
+        var renderer = createRenderer(font);
+        var node = new StyledTextNode("Plain", TextStyle.NORMAL);
+        var doc = new Document("test", null, null, List.of(node));
+
+        renderDocument(renderer, gui, doc);
+
+        var calls = RenderTestUtil.getDrawCalls(gui);
+        assertEquals(1, calls.size());
+        assertNull(calls.get(0).style(), "plain text should be drawn as a raw String, no style component");
+    }
 }

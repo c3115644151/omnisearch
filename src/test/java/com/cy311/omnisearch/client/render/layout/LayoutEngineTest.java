@@ -250,4 +250,33 @@ class LayoutEngineTest {
         // Centered: x + w/2 == WIDTH/2
         assertEquals(WIDTH / 2, imageNode.x + imageNode.w / 2);
     }
+
+    @Test
+    void paragraphWithFirstLineIndent_startsIndented() {
+        // mcmod.cn body paragraphs (text-indent:2em): the first text fragment must be
+        // shifted right by the indent; the paragraph width stays the same.
+        ParagraphNode para = new ParagraphNode(
+            List.of(new TextNode("这是一段带首行缩进的正文内容，长度足够换行。")),
+            true
+        );
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        assertFalse(paraNode.inlineChildren.isEmpty());
+        LayoutNode first = paraNode.inlineChildren.get(0);
+        // first line starts at contentX + 2*lineHeight (indent = 2em)
+        assertEquals(2 * LINE_HEIGHT, first.x);
+    }
+
+    @Test
+    void paragraphWithoutIndent_startsAtContentX() {
+        ParagraphNode para = new ParagraphNode(List.of(new TextNode("无缩进段落。")), false);
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        assertFalse(paraNode.inlineChildren.isEmpty());
+        assertEquals(0, paraNode.inlineChildren.get(0).x);
+    }
 }

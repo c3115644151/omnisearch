@@ -68,8 +68,13 @@ public class RenderTestUtil {
 
     /**
      * Records all drawString invocations and returns the (text, x, y, color) tuples.
+     * When the text is drawn via a styled Component, {@code style} carries its Style.
      */
-    public record DrawCall(String text, int x, int y, int color) {}
+    public record DrawCall(String text, int x, int y, int color, net.minecraft.network.chat.Style style) {
+        public DrawCall(String text, int x, int y, int color) {
+            this(text, x, y, color, null);
+        }
+    }
     public record SpriteCall(String sprite, int x, int y, int width, int height) {}
 
     public static List<DrawCall> getDrawCalls(GuiGraphics gui) {
@@ -79,17 +84,19 @@ public class RenderTestUtil {
             .map(i -> {
                 Object[] args = i.getArguments();
                 String text;
+                net.minecraft.network.chat.Style style = null;
                 if (args[1] instanceof String s) {
                     text = s;
                 } else if (args[1] instanceof Component c) {
                     text = c.getString();
+                    style = c.getStyle();
                 } else {
                     text = args[1].toString();
                 }
                 int x = args[2] instanceof Number n ? n.intValue() : 0;
                 int y = args[3] instanceof Number n ? n.intValue() : 0;
                 int color = args[4] instanceof Number n ? n.intValue() : 0;
-                return new DrawCall(text, x, y, color);
+                return new DrawCall(text, x, y, color, style);
             })
             .toList();
     }

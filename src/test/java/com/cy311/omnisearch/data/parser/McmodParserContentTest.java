@@ -165,6 +165,44 @@ class McmodParserContentTest {
     }
 
     @Test
+    void coloredText_rgbFunction() {
+        // mcmod.cn uses rgb() for red warnings — previously dropped, now must be parsed
+        List<DocNode> content = parseContent("<p><span style=\"color: rgb(255, 0, 0)\">红色警告</span></p>");
+
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        StyledTextNode styled = (StyledTextNode) para.getChildren().get(0);
+        assertEquals("#FF0000", styled.getStyle().color());
+        assertEquals("红色警告", styled.getText());
+    }
+
+    @Test
+    void coloredText_rgbaFunction() {
+        List<DocNode> content = parseContent("<p><span style=\"color: rgba(0, 128, 0, 0.5)\">半透明绿</span></p>");
+
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        StyledTextNode styled = (StyledTextNode) para.getChildren().get(0);
+        assertEquals("#00800080", styled.getStyle().color());
+    }
+
+    @Test
+    void coloredText_hslFunction() {
+        List<DocNode> content = parseContent("<p><span style=\"color: hsl(0, 100%, 50%)\">红</span></p>");
+
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        StyledTextNode styled = (StyledTextNode) para.getChildren().get(0);
+        assertEquals("#FF0000", styled.getStyle().color());
+    }
+
+    @Test
+    void coloredText_namedColor() {
+        List<DocNode> content = parseContent("<p><span style=\"color: red\">命名红</span></p>");
+
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        StyledTextNode styled = (StyledTextNode) para.getChildren().get(0);
+        assertEquals("#FF0000", styled.getStyle().color());
+    }
+
+    @Test
     void mixedInlineContent() {
         List<DocNode> content = parseContent("<p>普通文字<b>加粗</b><i>斜体</i>结尾</p>");
 
@@ -397,5 +435,42 @@ class McmodParserContentTest {
         // Search recursively through paragraph children
         long imgCount = countImagesRecursive(content);
         assertTrue(imgCount > 0, "Should find at least 1 ImageNode with WebP URL, found: " + imgCount);
+    }
+
+    @Test
+    void paragraphWithTextIndent_isMarked() {
+        // mcmod.cn body paragraphs carry CSS text-indent:2em — must be captured so the
+        // layout can render the first-line indent.
+        List<DocNode> content = parseContent("<p style=\"text-indent: 2em; text-wrap: wrap;\">首行缩进的正文</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertTrue(para.isFirstLineIndent());
+    }
+
+    @Test
+    void paragraphWithoutTextIndent_isNotMarked() {
+        List<DocNode> content = parseContent("<p>普通段落，无缩进</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertFalse(para.isFirstLineIndent());
+    }
+
+    @Test
+    void paragraphWithEditorTypedSpaces_isMarkedAndStripped() {
+        // Editors type full-width spaces (U+3000) for indent — ASCII spaces are stripped by
+        // the HTML parser, but ideographic spaces survive. MC renders them ~zero-width too,
+        // so they must be converted to a real indent flag and stripped from the text.
+        List<DocNode> content = parseContent("<p>　　编辑者手动空格缩进的正文</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertTrue(para.isFirstLineIndent(), "typed full-width spaces must mark the paragraph as indented");
+        TextNode first = (TextNode) para.getChildren().get(0);
+        assertFalse(first.getText().startsWith("　"), "leading full-width spaces must be stripped from text");
+        assertEquals("编辑者手动空格缩进的正文", first.getText());
+    }
+
+    @Test
+    void paragraphWithSingleLeadingSpace_notMarked() {
+        // A single leading space is usually incidental (e.g. " 【标题】" prefix) — not an indent
+        List<DocNode> content = parseContent("<p> 单个空格开头不算缩进</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertFalse(para.isFirstLineIndent());
     }
 }
