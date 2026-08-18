@@ -184,4 +184,70 @@ class LayoutEngineTest {
             "End-to-end: At least 2 IMAGE LayoutNodes should have .webp URLs, found: " + webpCount
                 + " URLs: " + imageNodes.stream().map(n -> n.imageUrl).toList());
     }
+
+    // ── Image sizing (ImageSizeProvider integration) ──
+
+    @Test
+    void imageNode_usesRealDecodedSizeWhenAvailable() {
+        // Image already loaded (size known): layout must reserve the box from the real
+        // size, NOT the (possibly wrong) HTML width/height attributes.
+        ImageNode img = new ImageNode("https://i.mcmod.cn/icon.png", "icon", null, 100, 50); // HTML says 100x50
+        Document doc = new Document("t", null, null, List.of(img));
+        // Real decoded size differs from HTML attrs (the common mcmod case)
+        ImageSizeProvider provider = url -> new com.cy311.omnisearch.client.render.image.ImageDimensions(100, 60);
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH, provider);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode imageNode = findNodesByType(nodes, LayoutType.IMAGE).get(0);
+        // Real 100x60 wins over HTML 100x50 (height 60, not 50); fits width so no resize
+        assertEquals(100, imageNode.w);
+        assertEquals(60, imageNode.h);
+    }
+
+    @Test
+    void imageNode_fallsBackToHtmlDimensionsWhenSizeUnknown() {
+        ImageNode img = new ImageNode("https://i.mcmod.cn/a.png", "a", null, 120, 60);
+        Document doc = new Document("t", null, null, List.of(img));
+        // No provider (or provider returns null): use HTML width/height
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode imageNode = findNodesByType(nodes, LayoutType.IMAGE).get(0);
+        assertEquals(120, imageNode.w);
+        assertEquals(60, imageNode.h);
+    }
+
+    @Test
+    void imageNode_smallImageEnforcedMinimumDisplaySize() {
+        // A tiny 16x16 icon should be enlarged to a readable minimum instead of a 2px dot
+        ImageNode img = new ImageNode("https://i.mcmod.cn/tiny.png", "tiny", null, 16, 16);
+        Document doc = new Document("t", null, null, List.of(img));
+        ImageSizeProvider provider = url -> new com.cy311.omnisearch.client.render.image.ImageDimensions(16, 16);
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH, provider);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode imageNode = findNodesByType(nodes, LayoutType.IMAGE).get(0);
+        assertTrue(imageNode.w >= metrics.lineHeight() * 3, "small image width should be enlarged, was " + imageNode.w);
+        assertTrue(imageNode.h >= metrics.lineHeight() * 2, "small image height should be enlarged, was " + imageNode.h);
+    }
+
+    @Test
+    void imageNode_noDimensions_placeholderBox() {
+        ImageNode img = new ImageNode("https://i.mcmod.cn/unknown.png", "u", null, 0, 0);
+        Document doc = new Document("t", null, null, List.of(img));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode imageNode = findNodesByType(nodes, LayoutType.IMAGE).get(0);
+        // No known size: 4 lines tall, 3:2 aspect
+        assertEquals(metrics.lineHeight() * 4, imageNode.h);
+        assertEquals(metrics.lineHeight() * 4 * 3 / 2, imageNode.w);
+    }
+
+    @Test
+    void imageNode_centeredHorizontally() {
+        ImageNode img = new ImageNode("https://i.mcmod.cn/c.png", "c", null, 100, 50);
+        Document doc = new Document("t", null, null, List.of(img));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode imageNode = findNodesByType(nodes, LayoutType.IMAGE).get(0);
+        // Centered: x + w/2 == WIDTH/2
+        assertEquals(WIDTH / 2, imageNode.x + imageNode.w / 2);
+    }
 }

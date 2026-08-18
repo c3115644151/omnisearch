@@ -59,6 +59,14 @@ public class DocumentRenderer {
         this.metrics = new FontMetrics(Math.max(1, font.lineHeight), font::width);
     }
 
+    /**
+     * The image manager used by this renderer (may be null if images are disabled).
+     */
+    @Nullable
+    public ImageManager imageManager() {
+        return imageManager;
+    }
+
     // ── Layout preparation (called when document or width changes) ──
 
     /**
@@ -68,7 +76,8 @@ public class DocumentRenderer {
      * Call {@link #paint} to render with a content-area offset.
      */
     public PreparedDocumentLayout prepare(Document doc, int width) {
-        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, width);
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, width,
+            imageManager != null ? imageManager::getCachedSize : null);
         List<LayoutNode> nodes = engine.layout(doc);
         int height = engine.getHeight();
         return new PreparedDocumentLayout(nodes, height);
@@ -184,30 +193,14 @@ public class DocumentRenderer {
         if (imageManager == null || url == null || url.isBlank()) return;
 
         ResourceLocation loc = imageManager.getImage(url).getNow(null);
-        if (loc != null) {
-            int renderW = node.w;
-            int renderH;
-            // Use real aspect ratio from loaded image, scaled to layout width
-            ImageDimensions dims = imageManager.getCachedSize(url);
-            if (dims != null && dims.width() > 0 && dims.height() > 0) {
-                renderH = (int) ((float) renderW / dims.width() * dims.height());
-            } else {
-                renderH = node.h; // fallback — layout estimated height
-            }
-            // Cap height to 8 lines of text (matching layout engine), re-scale width to preserve aspect ratio
-            int maxH = font.lineHeight * 8;
-            if (renderH > maxH) {
-                float scale = (float) maxH / renderH;
-                renderH = maxH;
-                renderW = Math.max(1, (int) (renderW * scale));
-            }
-            if (renderW > 0 && renderH > 0) {
-                gui.blit(loc, rx, ry, 0, 0, renderW, renderH, renderW, renderH);
-            }
+        if (loc != null && node.w > 0 && node.h > 0) {
+            // Layout already reserved the box from the real decoded size (ImageSizeProvider),
+            // so draw exactly the laid-out box — no re-scaling that could overflow.
+            gui.blit(loc, rx, ry, 0, 0, node.w, node.h, node.w, node.h);
             return;
         }
 
-        // Not yet loaded — show placeholder
+        // Not yet loaded — show placeholder sized to the reserved box
         gui.fill(rx, ry, rx + node.w, ry + node.h, OmniTheme.BG_PLACEHOLDER);
         String alt = node.alt;
         if (alt != null && !alt.isEmpty()) {

@@ -1,5 +1,6 @@
 package com.cy311.omnisearch.client.render.layout;
 
+import com.cy311.omnisearch.client.render.image.ImageDimensions;
 import com.cy311.omnisearch.data.model.document.*;
 import com.cy311.omnisearch.gui.theme.OmniTheme;
 import org.jetbrains.annotations.Nullable;
@@ -21,6 +22,8 @@ public class LayoutEngine {
     private int contentX;
     private int currentY;
     private int contentWidth;
+    @Nullable
+    private final ImageSizeProvider imageSizeProvider;
 
     // Spacing values derived from lineHeight - scale with font size and UI scale
     private final int paragraphSpacing;
@@ -48,10 +51,15 @@ public class LayoutEngine {
     private record PendingInline(InlineFragment fragment, int width, int height, int advance) {}
 
     public LayoutEngine(FontMetrics metrics, int x, int y, int width) {
+        this(metrics, x, y, width, null);
+    }
+
+    public LayoutEngine(FontMetrics metrics, int x, int y, int width, @Nullable ImageSizeProvider imageSizeProvider) {
         this.metrics = metrics;
         this.contentX = x;
         this.currentY = y;
         this.contentWidth = width;
+        this.imageSizeProvider = imageSizeProvider;
         this.inlineCursorX = x;
         this.inlineBaseY = y;
         this.inlineLineHeight = metrics.lineHeight();
@@ -225,29 +233,66 @@ public class LayoutEngine {
      * node.h = imgH only (no margins) so renderer draws exactly the image area.
      * Margins are applied via currentY advancement, creating consistent visual gaps.
      */
+    /**
+     * Block image sizing: prefers the ACTUAL decoded size (via {@link ImageSizeProvider})
+     * so layout matches what will be drawn — no more placeholder/overflow mismatch. Falls
+     * back to HTML width/height attributes, then to a sensible default box.
+     * <p>
+     * Rules: fit within contentWidth; cap height at 8 lines of text; never shrink below a
+     * small readable size. Small images (e.g. mcmod item icons) get a minimum display size
+     * so they stay legible instead of rendering as a 2px dot.
+     */
     private LayoutNode layoutImage(ImageNode node) {
-        int origW = node.getOrigWidth();
-        int origH = node.getOrigHeight();
-        int maxH = metrics.lineHeight() * 8;
+        int[] box = computeImageBox(node, contentWidth, metrics.lineHeight());
+        int imgX = contentX + (contentWidth - box[0]) / 2; // center horizontally
+        int imgY = currentY + imageTopMargin;
+        LayoutNode ln = new LayoutNode(LayoutType.IMAGE, null, node.getUrl(), null, node.getAlt());
+        ln.at(imgX, imgY, box[0], box[1]);
+        currentY += imageTopMargin + box[1] + imageBottomMargin;
+        return ln;
+    }
+
+    /**
+     * Computes a display box {w, h} for an image, using real size &gt; HTML attrs &gt; default.
+     * Returns a 2-element array. Pure helper — shared by block images and table cells.
+     */
+    private int[] computeImageBox(ImageNode node, int maxWidth, int lineHeight) {
+        int maxH = lineHeight * 8;
+        int minH = lineHeight * 2;
+        int minW = lineHeight * 3;
+        int realW = 0, realH = 0;
+        if (imageSizeProvider != null) {
+            ImageDimensions dims = imageSizeProvider.getImageSize(node.getUrl());
+            if (dims != null && dims.width() > 0 && dims.height() > 0) {
+                realW = dims.width();
+                realH = dims.height();
+            }
+        }
+        int oW = node.getOrigWidth();
+        int oH = node.getOrigHeight();
+        int w = realW > 0 && realH > 0 ? realW : (oW > 0 && oH > 0 ? oW : 0);
+        int h = realW > 0 && realH > 0 ? realH : (oW > 0 && oH > 0 ? oH : 0);
+
         int imgW, imgH;
-        if (origW > 0 && origH > 0) {
-            imgW = Math.min(origW, contentWidth);
-            imgH = (int) ((float) imgW / origW * origH);
+        if (w > 0 && h > 0) {
+            imgW = Math.min(w, maxWidth);
+            imgH = (int) ((float) imgW / w * h);
             if (imgH > maxH) {
                 imgH = maxH;
-                imgW = Math.min((int) ((float) imgH / origH * origW), contentWidth);
+                imgW = Math.min((int) ((float) imgH / h * w), maxWidth);
+            }
+            // Enforce a minimum display size so small icons stay legible
+            if (imgH < minH && imgW < minW) {
+                float scale = Math.max((float) minH / imgH, (float) minW / imgW);
+                imgH = Math.min((int) (imgH * scale), maxH);
+                imgW = Math.min((int) (imgW * scale), maxWidth);
             }
         } else {
-            imgH = metrics.lineHeight() * 4;
-            imgW = Math.min(imgH * 3 / 2, contentWidth);
+            // No known size: assume a 3:2 box, 4 lines tall
+            imgH = lineHeight * 4;
+            imgW = Math.min(imgH * 3 / 2, maxWidth);
         }
-
-        // Apply top margin, place image, advance past bottom margin
-        currentY += imageTopMargin;
-        LayoutNode ln = new LayoutNode(LayoutType.IMAGE, null, node.getUrl(), null, node.getAlt());
-        ln.at(contentX, currentY, imgW, imgH);
-        currentY += imgH + imageBottomMargin;
-        return ln;
+        return new int[]{Math.max(1, imgW), Math.max(1, imgH)};
     }
 
     private LayoutNode layoutInlineImage(ImageInlineNode node) {
@@ -371,19 +416,11 @@ public class LayoutEngine {
                     for (DocNode imgNode : imageNodes) {
                         if (imgNode instanceof ImageNode im) {
                             LayoutNode imgLayout = new LayoutNode(LayoutType.IMAGE, null, im.getUrl(), null, im.getAlt());
-                            int oW = im.getOrigWidth(), oH = im.getOrigHeight();
-                            int iW, iH;
-                            if (oW > 0 && oH > 0) {
-                                iW = Math.min(oW, cellW);
-                                iH = (int) ((float) iW / oW * oH);
-                                if (iH > cellMaxH) {
-                                    iH = cellMaxH;
-                                    iW = (int) ((float) iH / oH * oW);
-                                }
-                            } else {
-                                // No HTML dimensions: 3 lines tall, 3:2 aspect ratio
-                                iH = metrics.lineHeight() * 3;
-                                iW = Math.min(iH * 3 / 2, cellW);
+                            int[] ibox = computeImageBox(im, cellW, metrics.lineHeight());
+                            int iW = ibox[0], iH = ibox[1];
+                            if (iH > cellMaxH) {
+                                iH = cellMaxH;
+                                iW = Math.max(1, (int) ((float) iH / ibox[1] * ibox[0]));
                             }
                             imgLayout.at(cellX, imgY, iW, iH);
                             cell.add(imgLayout);

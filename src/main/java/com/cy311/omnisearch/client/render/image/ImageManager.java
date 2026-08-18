@@ -38,6 +38,9 @@ public class ImageManager implements AutoCloseable {
     private final Function<String, byte[]> downloader;
     private final RequestExecutor executor;
     private volatile boolean closed;
+    /** Monotonic counter bumped whenever any image finishes loading. Used to detect
+     *  "an image became ready" cheaply without scanning every URL. */
+    private final java.util.concurrent.atomic.AtomicLong loadGeneration = new java.util.concurrent.atomic.AtomicLong();
 
     /**
      * @param downloader function that downloads raw image bytes from a URL,
@@ -116,6 +119,7 @@ public class ImageManager implements AutoCloseable {
                         .register("omnisearch-img-" + cache.size(), dynTex);
                     OmnisearchMod.LOGGER.debug("loaded(via ImageIO): {} ({}x{})", url, width, height);
                     cache.put(url, new ImageEntry(loc, null, new ImageDimensions(width, height)));
+                    loadGeneration.incrementAndGet();
                     future.complete(loc);
                 });
                 return null;
@@ -142,6 +146,7 @@ public class ImageManager implements AutoCloseable {
                     .register("omnisearch-img-" + cache.size(), dynTex);
                 OmnisearchMod.LOGGER.debug("loaded(via STB): {} ({}x{})", url, width, height);
                 cache.put(url, new ImageEntry(loc, null, new ImageDimensions(width, height)));
+                loadGeneration.incrementAndGet();
                 future.complete(loc);
             });
             return null;
@@ -158,6 +163,26 @@ public class ImageManager implements AutoCloseable {
     public ImageDimensions getCachedSize(String url) {
         ImageEntry entry = cache.get(url);
         return entry != null ? entry.dimensions : null;
+    }
+
+    /**
+     * True if the image at {@code url} has been decoded and its texture is registered.
+     */
+    public boolean isLoaded(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        ImageEntry entry = cache.get(url);
+        return entry != null && entry.location != null;
+    }
+
+    /**
+     * A monotonic generation counter that increments whenever any image completes loading.
+     * Consumers can poll this cheaply to decide whether a layout that depends on image
+     * dimensions should be recomputed.
+     */
+    public long loadGeneration() {
+        return loadGeneration.get();
     }
 
     /**

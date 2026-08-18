@@ -433,7 +433,9 @@ public class OmnisearchScreen extends Screen {
             return true;
         }
         if (uiState.search().currentView() == SearchSessionState.BodyView.DETAIL) {
-            uiState = uiState.withDetail(detailPane.handleScroll(uiState.detail(), scrollY, bodyBounds[3]));
+            // Pass the SAME panel bounds render() uses (bodyBounds, not the outer shell
+            // bounds), so wheel scrolling reaches exactly the same bottom as the scrollbar.
+            uiState = uiState.withDetail(detailPane.scrollInPanel(uiState.detail(), scrollY, bodyBounds[0], bodyBounds[1], bodyBounds[2], bodyBounds[3]));
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
@@ -457,6 +459,44 @@ public class OmnisearchScreen extends Screen {
         if (captchaImage != null) {
             captchaImage.close();
             captchaImage = null;
+        }
+    }
+
+    /**
+     * Collects the real image URLs (block + inline, excluding mc-icon pseudo-urls) from a
+     * document tree, for prefetching.
+     */
+    private static List<String> collectImageUrls(com.cy311.omnisearch.data.model.document.Document doc) {
+        List<String> urls = new ArrayList<>();
+        collectImageUrls(doc.content(), urls);
+        return urls;
+    }
+
+    private static void collectImageUrls(List<com.cy311.omnisearch.data.model.document.DocNode> nodes, List<String> out) {
+        for (com.cy311.omnisearch.data.model.document.DocNode node : nodes) {
+            if (node instanceof com.cy311.omnisearch.data.model.document.ImageNode img) {
+                if (img.getUrl() != null && !img.getUrl().startsWith("mc-icon://")) {
+                    out.add(img.getUrl());
+                }
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.ImageInlineNode ii) {
+                if (ii.getUrl() != null && !ii.getUrl().startsWith("mc-icon://")) {
+                    out.add(ii.getUrl());
+                }
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.SectionNode sn) {
+                collectImageUrls(sn.getChildren(), out);
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.HeadingNode hn) {
+                collectImageUrls(hn.getChildren(), out);
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.ParagraphNode pn) {
+                collectImageUrls(pn.getChildren(), out);
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.LinkNode ln) {
+                collectImageUrls(ln.getChildren(), out);
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.ListNode lst) {
+                collectImageUrls(lst.getItems(), out);
+            } else if (node instanceof com.cy311.omnisearch.data.model.document.TableNode tn) {
+                for (java.util.List<com.cy311.omnisearch.data.model.document.DocNode> row : tn.getRows()) {
+                    collectImageUrls(row, out);
+                }
+            }
         }
     }
 
@@ -595,6 +635,11 @@ public class OmnisearchScreen extends Screen {
             .thenAccept(page -> Minecraft.getInstance().tell(() -> {
                 if (requestId != detailSeq) return;
                 uiState = OmnisearchWindowReducer.reduce(uiState, new SearchEvent.DetailLoaded(page));
+                // Prefetch all images referenced by the detail page so they load in
+                // parallel; layout re-runs when they finish (see DetailContentPane).
+                if (page != null && imageManager != null) {
+                    imageManager.preload(collectImageUrls(page.document()));
+                }
             }))
             .exceptionally(ex -> {
                 Minecraft.getInstance().tell(() -> {

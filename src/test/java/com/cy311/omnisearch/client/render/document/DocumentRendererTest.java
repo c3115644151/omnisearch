@@ -619,8 +619,10 @@ class DocumentRendererTest {
 
         // lineHeight=9: imageTopMargin=max(2,9/2)=4, imgH=9*4=36, imgW=min(36*3/2,200)=54
         // node.y = 0 + imageTopMargin = 4, node.h = 36 (no margins in h)
-        // fill with offset(10,20): fill(10, 20+4=24, 10+54=64, 24+36=60, 0xFF444444)
-        verify(gui).fill(eq(10), eq(24), eq(64), eq(60),
+        // Block images are centered horizontally (content width 200, box 54 wide):
+        //   imgX = (200-54)/2 = 73; + offset(10) -> 83
+        //   node.y = 4; + offset(20) -> 24; right edge 83+54=137; bottom 24+36=60
+        verify(gui).fill(eq(10 + (200 - 54) / 2), eq(24), eq(10 + (200 - 54) / 2 + 54), eq(60),
             eq(0xFF444444));
     }
 

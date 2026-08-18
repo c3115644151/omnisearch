@@ -1,6 +1,8 @@
 package com.cy311.omnisearch.client.render;
 
 import com.cy311.omnisearch.client.render.document.DocumentRenderer;
+import com.cy311.omnisearch.client.render.document.PreparedDocumentLayout;
+import com.cy311.omnisearch.client.render.image.ImageManager;
 import com.cy311.omnisearch.client.screen.state.DetailViewState;
 import com.cy311.omnisearch.gui.theme.OmniTheme;
 import net.minecraft.client.gui.GuiGraphics;
@@ -15,6 +17,10 @@ public final class DetailContentPane {
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;
     private final ScrollbarWidget scrollbar = new ScrollbarWidget();
+    /** Image URLs that the current layout was built with while their size was still
+     *  unknown (placeholder box). When one of them finishes loading, the layout must be
+     *  rebuilt so the reserved box matches the real decoded size. */
+    private java.util.Set<String> pendingImageUrls = java.util.Collections.emptySet();
 
     public DetailContentPane(DetailPanelWidget panelWidget, DocumentRenderer documentRenderer) {
         this.panelWidget = panelWidget;
@@ -46,7 +52,40 @@ public final class DetailContentPane {
         if (maxScroll > 0) {
             drawScrollbar(gui, nextState, contentArea, maxScroll);
         }
+
+        // Re-layout when any image this layout was built with (while its size was unknown)
+        // has since finished loading, so the reserved box matches the real decoded size.
+        // This fixes image/text overlap AND the "content cut off at scroll bottom" defect:
+        // without it the layout height can stay at the placeholder value even though the
+        // drawn images are taller, making the true end unreachable by scrolling.
+        if (relayoutPending()) {
+            nextState = nextState.clearLayoutCache();
+        }
         return nextState;
+    }
+
+    /**
+     * True if one of the images the current layout was built with (while its size was
+     * unknown) has finished loading, meaning the layout must be rebuilt with the real size.
+     * <p>
+     * Bounded: {@code pendingImageUrls} only shrinks (a pending URL is removed once the
+     * layout has been rebuilt with it loaded, or once it permanently failed), so this can
+     * never spin. An image that keeps failing stays pending but never returns true.
+     */
+    private boolean relayoutPending() {
+        if (pendingImageUrls.isEmpty()) {
+            return false;
+        }
+        ImageManager imageManager = documentRenderer.imageManager();
+        if (imageManager == null) {
+            return false;
+        }
+        for (String url : pendingImageUrls) {
+            if (imageManager.isLoaded(url)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public ClickResult handleClick(DetailViewState state, int x, int y, int width, int height, double mx, double my) {
@@ -107,11 +146,31 @@ public final class DetailContentPane {
     }
 
     public DetailViewState handleScroll(DetailViewState state, double scrollY, int viewportHeight) {
+        // maxScroll is computed from the SAME viewport used by render()'s clamp and the
+        // scrollbar, so wheel scrolling reaches exactly the same bottom as dragging.
+        // (Previously mouseScrolled fed a different (smaller) viewport height, which made
+        //  the wheel stop short of the true bottom — visible as "can't scroll the last bit,
+        //  but the scrollbar goes all the way".)
         int maxScroll = Math.max(0, state.contentHeight() - viewportHeight);
         int step = Math.max(1, (int) Math.round(Math.abs(scrollY))) * WHEEL_SCROLL_PIXELS;
         int newOffset = state.scrollOffset() - Integer.signum((int) Math.round(scrollY)) * step;
         int clamped = Math.max(0, Math.min(newOffset, maxScroll));
         return state.withScrollOffset(clamped);
+    }
+
+    /**
+     * Scrolls within the panel using the same content-area viewport as {@link #render}
+     * (via {@code getContentAreaBounds}), guaranteeing wheel scrolling reaches exactly the
+     * same bottom as the scrollbar/dragging.
+     *
+     * @param x,y,width,height the panel bounds (as passed to render)
+     */
+    public DetailViewState scrollInPanel(DetailViewState state, double scrollY, int x, int y, int width, int height) {
+        if (state.page() == null) {
+            return state;
+        }
+        int[] contentArea = panelWidget.getContentAreaBounds(x, y, width, height);
+        return handleScroll(state, scrollY, contentArea[3]);
     }
 
     public DetailViewState stopDragging(DetailViewState state) {
@@ -127,6 +186,20 @@ public final class DetailContentPane {
             return state;
         }
         var layout = documentRenderer.prepare(state.page().document(), width);
+        // Record which images this layout was built with while their size was still unknown
+        // (placeholder). When one of them loads, we re-layout to use the real size.
+        ImageManager imageManager = documentRenderer.imageManager();
+        if (imageManager == null) {
+            pendingImageUrls = java.util.Collections.emptySet();
+        } else {
+            java.util.Set<String> pending = new java.util.LinkedHashSet<>();
+            for (String url : layout.imageUrls()) {
+                if (!imageManager.isLoaded(url)) {
+                    pending.add(url);
+                }
+            }
+            pendingImageUrls = pending;
+        }
         return state.withCachedLayout(state.page().id(), width, layout, layout.extractLinks());
     }
 
