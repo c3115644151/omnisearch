@@ -67,4 +67,28 @@ class DetailContentPaneTest {
         assertFalse(title.goBack());
         assertEquals("https://www.mcmod.cn/item/1.html", title.openUrl());
     }
+
+    @Test
+    void handleScroll_usesViewportHeightForMaxScroll() {
+        DetailViewState state = DetailViewState.initial()
+            .withPage(new ItemPage("item/1", "测试", "来源", new Document("Title", null, null, List.of(new TextNode("content"))), "https://example.com"))
+            .withContentHeight(600)
+            .withScrollOffset(0);
+
+        DetailViewState next = pane.handleScroll(state, -1, 120);
+
+        assertTrue(next.scrollOffset() > 0);
+    }
+
+    @Test
+    void handleClick_onScrollbarWithoutOverflowDoesNotStartDragging() {
+        DetailViewState state = DetailViewState.initial()
+            .withPage(new ItemPage("item/1", "测试", "来源", new Document("Title", null, null, List.of(new TextNode("content"))), "https://example.com"))
+            .withContentHeight(50);
+
+        var click = pane.handleClick(state, 100, 40, 320, 220, 410, 120);
+
+        assertTrue(click.handled());
+        assertFalse(click.state().draggingScrollbar());
+    }
 }

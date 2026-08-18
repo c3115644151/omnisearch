@@ -10,6 +10,7 @@ import org.jetbrains.annotations.Nullable;
  * Encapsulates detail-panel rendering, layout caching, and pointer interaction.
  */
 public final class DetailContentPane {
+    private static final int WHEEL_SCROLL_PIXELS = OmniTheme.SCROLL_STEP;
 
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;
@@ -89,7 +90,7 @@ public final class DetailContentPane {
                 int newOffset = Math.round(frac * maxScroll);
                 return new ClickResult(true, false, null, state.withScrollOffset(newOffset).withDraggingScrollbar(true));
             }
-            return new ClickResult(true, false, null, state.withDraggingScrollbar(true));
+            return new ClickResult(true, false, null, state.withDraggingScrollbar(false));
         }
         return ClickResult.notHandled(state.withDraggingScrollbar(false));
     }
@@ -105,9 +106,10 @@ public final class DetailContentPane {
         return state.withScrollOffset(Math.round(frac * maxScroll));
     }
 
-    public DetailViewState handleScroll(DetailViewState state, double scrollY, int contentHeight) {
-        int maxScroll = Math.max(0, state.contentHeight() - contentHeight);
-        int newOffset = state.scrollOffset() - (int) Math.round(scrollY) * OmniTheme.SCROLL_STEP;
+    public DetailViewState handleScroll(DetailViewState state, double scrollY, int viewportHeight) {
+        int maxScroll = Math.max(0, state.contentHeight() - viewportHeight);
+        int step = Math.max(1, (int) Math.round(Math.abs(scrollY))) * WHEEL_SCROLL_PIXELS;
+        int newOffset = state.scrollOffset() - Integer.signum((int) Math.round(scrollY)) * step;
         int clamped = Math.max(0, Math.min(newOffset, maxScroll));
         return state.withScrollOffset(clamped);
     }

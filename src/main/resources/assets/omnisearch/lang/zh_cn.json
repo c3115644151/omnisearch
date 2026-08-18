@@ -1,4 +1,6 @@
 {
     "key.categories.omnisearch": "Omnisearch",
-    "key.omnisearch.open": "打开搜索 / 搜索光标下物品"
+    "key.omnisearch.open": "打开搜索窗口",
+    "key.omnisearch.inspect_hovered": "查询悬停物品",
+    "hint.omnisearch.education": "Omnisearch · 长按 %s 查看资料"
 }

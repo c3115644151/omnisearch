@@ -1,4 +1,6 @@
 {
     "key.categories.omnisearch": "Omnisearch",
-    "key.omnisearch.open": "Open Search / Search item under cursor"
+    "key.omnisearch.open": "Open Search Window",
+    "key.omnisearch.inspect_hovered": "Inspect Hovered Item",
+    "hint.omnisearch.education": "Omnisearch · Hold %s to inspect this item"
 }
