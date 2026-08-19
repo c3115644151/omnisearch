@@ -405,6 +405,14 @@ public class McmodParser {
         if (titleEl != null) {
             title = titleEl.text().trim();
         }
+        if (title.isBlank()) {
+            // Fall back to the <title> tag ("[BOMD]祸乱鬼魅 (…)... - MC百科|…")
+            String pageTitle = doc.title();
+            if (!pageTitle.isBlank()) {
+                int cut = pageTitle.indexOf(" - MC百科");
+                title = cut > 0 ? pageTitle.substring(0, cut).trim() : pageTitle.trim();
+            }
+        }
 
         // Source mod (mod page refers to itself, or may have common-nav)
         String sourceMod = null;
@@ -418,8 +426,8 @@ public class McmodParser {
                 : name;
         }
 
-        // Content
-        Element contentEl = doc.selectFirst(".item-content.common-text.font14, .mod-content.common-text.font14");
+        // Content — mod pages put their intro/description in li.text-area.common-text.font14
+        Element contentEl = doc.selectFirst(".item-content.common-text.font14, .mod-content.common-text.font14, li.text-area.common-text.font14");
         List<DocNode> content = new ArrayList<>();
 
         if (titleEl != null && !title.isBlank()) {
