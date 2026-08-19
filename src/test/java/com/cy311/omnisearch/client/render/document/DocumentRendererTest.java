@@ -977,4 +977,23 @@ class DocumentRendererTest {
         assertEquals(0xFFFFFFFF, DocumentRenderer.readableColor(0xFFFFFFFF));
         assertEquals(-1, DocumentRenderer.readableColor(-1));
     }
+
+    // ===========================================================
+    // mc-icon semantic colors
+    // ===========================================================
+
+    @Test
+    void mcIcon_knownIconsGetSemanticColor() {
+        // Experience/armor/speed/poison tinted by meaning, not neutral gray
+        assertEquals(0xFF55FF55, DocumentRenderer.mcIconColor("icon-experience"));
+        assertEquals(0xFFCCCCCC, DocumentRenderer.mcIconColor("icon-armor"));
+        assertEquals(0xFFFF5555, DocumentRenderer.mcIconColor("icon-strength"));
+        assertEquals(0xFF4E9331, DocumentRenderer.mcIconColor("icon-poison"));
+    }
+
+    @Test
+    void mcIcon_unknownIconsNeutralGray() {
+        assertEquals(0xFF888888, DocumentRenderer.mcIconColor("icon-unknown-thing"));
+        assertEquals(0xFF888888, DocumentRenderer.mcIconColor("icon-"));
+    }
 }

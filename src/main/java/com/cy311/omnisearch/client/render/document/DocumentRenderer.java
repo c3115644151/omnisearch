@@ -28,13 +28,18 @@ import java.util.Set;
  */
 public class DocumentRenderer {
 
-    // MC GUI sprite locations for inline SVG icon rendering (1.21.1 sprite system)
+    // MC GUI sprite locations for inline SVG icon rendering (1.21.1 sprite system).
+    // Verified against client-extra.jar: hunger is hud/food_*, NOT hud/hunger/*.
     private static final ResourceLocation MC_HEART_CONTAINER = ResourceLocation.withDefaultNamespace("hud/heart/container");
     private static final ResourceLocation MC_HEART_HALF = ResourceLocation.withDefaultNamespace("hud/heart/half");
     private static final ResourceLocation MC_HEART_FULL = ResourceLocation.withDefaultNamespace("hud/heart/full");
-    private static final ResourceLocation MC_HUNGER_CONTAINER = ResourceLocation.withDefaultNamespace("hud/hunger/container");
-    private static final ResourceLocation MC_HUNGER_HALF = ResourceLocation.withDefaultNamespace("hud/hunger/half");
-    private static final ResourceLocation MC_HUNGER_FULL = ResourceLocation.withDefaultNamespace("hud/hunger/full");
+    private static final ResourceLocation MC_HUNGER_CONTAINER = ResourceLocation.withDefaultNamespace("hud/food_empty");
+    private static final ResourceLocation MC_HUNGER_HALF = ResourceLocation.withDefaultNamespace("hud/food_half");
+    private static final ResourceLocation MC_HUNGER_FULL = ResourceLocation.withDefaultNamespace("hud/food_full");
+    private static final ResourceLocation MC_ARMOR_FULL = ResourceLocation.withDefaultNamespace("hud/armor_full");
+    private static final ResourceLocation MC_ARMOR_HALF = ResourceLocation.withDefaultNamespace("hud/armor_half");
+    private static final ResourceLocation MC_AIR = ResourceLocation.withDefaultNamespace("hud/air");
+    private static final ResourceLocation MC_EXP = ResourceLocation.withDefaultNamespace("hud/experience_bar_progress");
 
     /** Tracks unknown mc-icon names we've already logged to avoid spam. */
     private static final Set<String> loggedUnknownIcons = new HashSet<>();
@@ -282,16 +287,18 @@ public class DocumentRenderer {
             if (tryRenderMcIcon(iconName, rx, ry, iconSize)) {
                 return;
             }
-            // Known text-based icons: don't log as unmapped, just render abbreviation
+            // Known text-based icons: don't log as unmapped, just render abbreviation.
+            // The abbreviation is tinted by semantic color (experience green, hunger
+            // orange, poison green…) so even without a sprite the icon reads at a glance.
             if (isKnownTextIcon(iconName)) {
                 String abbr = abbreviateIconName(iconName);
-                gui.drawString(font, abbr, rx, ry, 0xFF888888, false);
+                gui.drawString(font, abbr, rx, ry, mcIconColor(iconName), false);
                 return;
             }
             logUnknownIconOnce(iconName);
             // Fallback: render readable abbreviation
             String abbr = abbreviateIconName(iconName);
-            gui.drawString(font, abbr, rx, ry, 0xFF888888, false);
+            gui.drawString(font, abbr, rx, ry, mcIconColor(iconName), false);
             return;
         }
 
@@ -310,27 +317,180 @@ public class DocumentRenderer {
     }
 
     /**
-     * Maps mcmod.cn SVG icon names to Minecraft's GUI sprite system (1.21.1).
-     * Returns true if the icon was recognized and rendered via blitSprite.
+     * Maps mcmod.cn SVG icon names to vanilla Minecraft resources (1.21.1):
+     * HUD sprites for health/hunger/air, and the mob_effect textures for status effects.
+     * Returns true if the icon was rendered.
      */
     private boolean tryRenderMcIcon(String iconName, int x, int y, int size) {
-        // Determine icon state: full, half, or empty/container
         boolean isHalf = iconName.contains("-half");
         boolean isEmpty = iconName.contains("-empty") || iconName.contains("-container");
+
+        // Composite icons: mcmod encodes the state in the name, e.g.
+        //   icon-food-full-hunger-level        → full hunger bar
+        //   icon-food-empty-saturation-level-100 → empty saturation
+        //   icon-toughness-half                → armor toughness
+        String lower = iconName.toLowerCase();
+        if (lower.startsWith("icon-food-")) {
+            boolean saturating = lower.contains("saturation");
+            boolean empty = lower.contains("-empty");
+            ResourceLocation sprite;
+            if (saturating) {
+                // Saturation uses the mob_effect saturation texture (orange sparkle)
+                gui.blit(ResourceLocation.withDefaultNamespace("textures/mob_effect/saturation.png"),
+                    x, y, 0, 0, size, size, size, size);
+                return true;
+            }
+            sprite = empty ? MC_HUNGER_CONTAINER : isHalf ? MC_HUNGER_HALF : MC_HUNGER_FULL;
+            gui.blitSprite(sprite, x, y, size, size);
+            return true;
+        }
+        if (lower.startsWith("icon-toughness")) {
+            // Armor toughness: half bar for a half point, full otherwise
+            gui.blitSprite(isHalf ? MC_ARMOR_HALF : MC_ARMOR_FULL, x, y, size, size);
+            return true;
+        }
+        if (lower.startsWith("icon-food")) {
+            gui.blitSprite(isHalf ? MC_HUNGER_HALF : MC_HUNGER_FULL, x, y, size, size);
+            return true;
+        }
+
         String key = iconName
             .replace("icon-", "")
             .replace("-full", "")
             .replace("-half", "")
             .replace("-empty", "")
-            .replace("-container", "");
-        ResourceLocation sprite;
+            .replace("-container", "")
+            .replace("_", "")
+            .toLowerCase();
+        // HUD sprites (hearts, hunger, air, armor)
         switch (key) {
-            case "health" -> sprite = isEmpty ? MC_HEART_CONTAINER : isHalf ? MC_HEART_HALF : MC_HEART_FULL;
-            case "hunger" -> sprite = isEmpty ? MC_HUNGER_CONTAINER : isHalf ? MC_HUNGER_HALF : MC_HUNGER_FULL;
-            default -> { return false; }
+            case "health" -> {
+                gui.blitSprite(isEmpty ? MC_HEART_CONTAINER : isHalf ? MC_HEART_HALF : MC_HEART_FULL, x, y, size, size);
+                return true;
+            }
+            case "hunger" -> {
+                gui.blitSprite(isEmpty ? MC_HUNGER_CONTAINER : isHalf ? MC_HUNGER_HALF : MC_HUNGER_FULL, x, y, size, size);
+                return true;
+            }
+            case "air" -> {
+                gui.blitSprite(MC_AIR,
+                    x, y, size, size);
+                return true;
+            }
+            case "armor" -> {
+                gui.blitSprite(ResourceLocation.withDefaultNamespace("hud/armor_full"),
+                    x, y, size, size);
+                return true;
+            }
+            case "exp", "experience" -> {
+                gui.blitSprite(MC_EXP,
+                    x, y, size, size);
+                return true;
+            }
+            default -> { /* fall through to mob_effect textures */ }
         }
-        gui.blitSprite(sprite, x, y, size, size);
-        return true;
+        // Status effects: mcmod icon name → vanilla mob_effect/{name}.png texture.
+        // The PNGs are 18x18; the name normalizations below match vanilla texture names.
+        String effect = normalizeEffectName(key);
+        if (effect != null) {
+            ResourceLocation tex = ResourceLocation.withDefaultNamespace("textures/mob_effect/" + effect + ".png");
+            gui.blit(tex, x, y, 0, 0, size, size, size, size);
+            return true;
+        }
+        return false;
+    }
+
+    /** Maps a normalized (no-underscore, lowercase) mcmod icon key to a vanilla
+     *  mob_effect texture file name (with underscores), or null if no vanilla effect
+     *  matches. mcmod icon names are the vanilla effect names, so most map 1:1. */
+    private static String normalizeEffectName(String key) {
+        return switch (key) {
+            case "absorption" -> "absorption";
+            case "badomen" -> "bad_omen";
+            case "blindness" -> "blindness";
+            case "conduitpower" -> "conduit_power";
+            case "darkness" -> "darkness";
+            case "dolphinsgrace" -> "dolphins_grace";
+            case "fireresistance" -> "fire_resistance";
+            case "glowing" -> "glowing";
+            case "haste" -> "haste";
+            case "healthboost" -> "health_boost";
+            case "heroofthevillage" -> "hero_of_the_village";
+            case "hunger" -> "hunger";
+            case "infested" -> "infested";
+            case "instantdamage" -> "instant_damage";
+            case "instanthealth" -> "instant_health";
+            case "invisibility" -> "invisibility";
+            case "jumpboost" -> "jump_boost";
+            case "levitation" -> "levitation";
+            case "luck" -> "luck";
+            case "miningfatigue" -> "mining_fatigue";
+            case "nausea" -> "nausea";
+            case "nightvision" -> "night_vision";
+            case "oozing" -> "oozing";
+            case "poison" -> "poison";
+            case "raidomen" -> "raid_omen";
+            case "regeneration" -> "regeneration";
+            case "resistance" -> "resistance";
+            case "saturation" -> "saturation";
+            case "slowfalling" -> "slow_falling";
+            case "slowness" -> "slowness";
+            case "speed" -> "speed";
+            case "strength" -> "strength";
+            case "trialomen" -> "trial_omen";
+            case "unluck" -> "unluck";
+            case "waterbreathing" -> "water_breathing";
+            case "weakness" -> "weakness";
+            case "weaving" -> "weaving";
+            case "windcharged" -> "wind_charged";
+            case "wither" -> "wither";
+            default -> null;
+        };
+    }
+
+    /**
+     * Semantic color for a mc-icon abbreviation, so icons read at a glance even without a
+     * sprite: experience green, hunger orange, status-effect colors, etc.
+     */
+    static int mcIconColor(String iconName) {
+        String raw = iconName
+            .replace("icon-", "")
+            .replace("-full", "")
+            .replace("-half", "")
+            .replace("-empty", "")
+            .replace("-container", "");
+        return switch (raw) {
+            case "experience", "exp" -> 0xFF55FF55;      // XP green
+            case "saturation", "sat" -> 0xFFFFAA00;     // hunger orange
+            case "armor" -> 0xFFCCCCCC;                 // silver armor
+            case "air" -> 0xFF66CCFF;                   // bubble blue
+            case "speed" -> 0xFFFF5555;                 // speed blue-grey in MC is 7CAFC6; use light blue
+            case "slowness" -> 0xFF8B8B8B;
+            case "haste" -> 0xFFDCDCDC;
+            case "mining-fatigue" -> 0xFF4A4A4A;
+            case "strength" -> 0xFFFF5555;              // red
+            case "weakness" -> 0xFF8B8B8B;
+            case "jump-boost" -> 0xFF22FF4C;
+            case "resistance" -> 0xFF994C00;
+            case "fire-resistance" -> 0xFFE49A3A;
+            case "water-breathing" -> 0xFF2E87AB;
+            case "invisibility" -> 0xFF7F8392;
+            case "night-vision" -> 0xFF1F1FA1;
+            case "regeneration" -> 0xFFCD5CAB;
+            case "poison" -> 0xFF4E9331;                // poison green
+            case "wither" -> 0xFF352A27;
+            case "absorption" -> 0xFF2552A5;
+            case "health-boost" -> 0xFFF87E23;
+            case "glowing" -> 0xFF94A061;
+            case "levitation" -> 0xFFCEFFFF;
+            case "luck" -> 0xFF339900;
+            case "bad-luck", "unluck" -> 0xFFC0A700;
+            case "slow-falling" -> 0xFFF8F9FF;
+            case "conduit-power" -> 0xFF1C437A;
+            case "dolphins-grace" -> 0xFF88CBEB;
+            case "darkness" -> 0xFF202020;
+            default -> 0xFF888888;                      // neutral gray
+        };
     }
 
     /**
