@@ -43,7 +43,9 @@ class SearchResultsPaneTest {
 
         SearchSessionState rendered = pane.render(gui, state, 20, 40, 220, 60, 0, 0);
 
-        assertEquals(0, rendered.resultsScrollOffset());
+        // 10 results, viewport height 60 → visibleRows = 60/16 = 3, so maxScroll = 10-3 = 7.
+        // The offset is clamped down to that max (not to 0).
+        assertEquals(7, rendered.resultsScrollOffset());
     }
 
     @Test

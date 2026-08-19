@@ -44,7 +44,10 @@ public final class DetailContentPane {
         }
 
         gui.enableScissor(contentArea[0], contentArea[1], contentArea[0] + contentArea[2], contentArea[1] + contentArea[3]);
-        documentRenderer.paint(gui, nextState.cachedLayout(), contentArea[0], contentArea[1] - nextState.scrollOffset(), mouseX, mouseY);
+        // Cull nodes outside the visible viewport (scrollOffset shifts content up; the
+        // scissor rect is the on-screen window) so long pages only draw what's visible.
+        documentRenderer.paint(gui, nextState.cachedLayout(), contentArea[0], contentArea[1] - nextState.scrollOffset(),
+            mouseX, mouseY, contentArea[1], contentArea[1] + contentArea[3]);
         gui.disableScissor();
 
         nextState = nextState.withContentHeight(nextState.cachedLayout().height());

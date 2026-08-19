@@ -86,7 +86,10 @@ class DetailContentPaneTest {
             .withPage(new ItemPage("item/1", "测试", "来源", new Document("Title", null, null, List.of(new TextNode("content"))), "https://example.com"))
             .withContentHeight(50);
 
-        var click = pane.handleClick(state, 100, 40, 320, 220, 410, 120);
+        // Panel (100,40,320,220): contentArea x=104..414, so scrollbar spans x=414..420.
+        // Click on the scrollbar (mx=416). Content (50) fits viewport (201) → maxScroll=0,
+        // so the click must be handled but NOT start dragging.
+        var click = pane.handleClick(state, 100, 40, 320, 220, 416, 120);
 
         assertTrue(click.handled());
         assertFalse(click.state().draggingScrollbar());

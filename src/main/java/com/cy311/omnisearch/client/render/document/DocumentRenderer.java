@@ -98,12 +98,30 @@ public class DocumentRenderer {
     }
 
     public void paint(GuiGraphics g, PreparedDocumentLayout layout, int offsetX, int offsetY, int mouseX, int mouseY) {
+        paint(g, layout, offsetX, offsetY, mouseX, mouseY, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Paints the layout, culling nodes outside the vertical viewport [clipTop, clipBottom]
+     * (screen coordinates). This keeps long pages fast — off-screen nodes are skipped
+     * instead of being drawn every frame.
+     */
+    public void paint(GuiGraphics g, PreparedDocumentLayout layout, int offsetX, int offsetY,
+                      int mouseX, int mouseY, int clipTop, int clipBottom) {
         this.gui = g;
         this.paintOffsetX = offsetX;
         this.paintOffsetY = offsetY;
         this.mouseAbsX = mouseX;
         this.mouseAbsY = mouseY;
         for (LayoutNode node : layout.nodes()) {
+            if (node.type == LayoutType.PARAGRAPH || node.type == LayoutType.HEADING
+                    || node.type == LayoutType.TABLE || node.type == LayoutType.LIST
+                    || node.type == LayoutType.IMAGE || node.type == LayoutType.DIVIDER) {
+                int screenY = node.y + offsetY;
+                if (screenY + node.h < clipTop || screenY > clipBottom) {
+                    continue; // fully outside the visible viewport
+                }
+            }
             renderLayoutNode(node);
         }
     }
