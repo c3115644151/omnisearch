@@ -38,6 +38,14 @@ neoForge {
 }
 
 dependencies {
+    // jarJar embeds these into the published mod JAR (jar-in-jar) so the runtime classes
+    // are present when the mod is installed standalone. Without this, jsoup/webp-imageio
+    // only exist on the dev classpath (additionalRuntimeClasspath) and the published JAR
+    // fails at runtime with ClassNotFoundException (org/jsoup/Jsoup).
+    jarJar 'org.jsoup:jsoup:1.19.1'
+    jarJar 'org.sejda.imageio:webp-imageio:0.1.6'
+    // Keep dev-run-time deps available for runClient (they're also picked up via jarJar's
+    // resolution, but additionalRuntimeClasspath guarantees they're on the dev classpath).
     add 'additionalRuntimeClasspath', 'org.jsoup:jsoup:1.19.1'
     add 'additionalRuntimeClasspath', 'org.sejda.imageio:webp-imageio:0.1.6'
 }
