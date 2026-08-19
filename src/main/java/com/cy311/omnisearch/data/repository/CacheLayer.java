@@ -22,7 +22,9 @@ public class CacheLayer {
     // v9: ParagraphNode gained firstLineIndent (CSS text-indent + editor typed spaces)
     // v10: TableNode gained rowColspans (colspan merged cells)
     // v11: table layout switched to row-grouped rendering and common-text-title headings
-    static final int CACHE_VERSION = 11;
+    // v12: ParagraphNode gained align; fieldset/legend parsing
+    // v13: span.figure image+caption extraction (CaptionNode)
+    static final int CACHE_VERSION = 13;
 
     // TTL configuration (milliseconds)
     private static final long SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000L;   // 7 days

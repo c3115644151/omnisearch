@@ -496,6 +496,36 @@ public class McmodParser {
             case "h5" -> java.util.List.of(new HeadingNode(5, parseInlineChildren(el)));
             case "h6" -> java.util.List.of(new HeadingNode(6, parseInlineChildren(el)));
             case "p" -> {
+                // mcmod.cn image blocks: <p><span class="figure"><img …><span class="figcaption">注</span></span></p>
+                // Extract each figure as a block image + caption, and the rest as a paragraph.
+                Elements figureSpans = el.select("span.figure");
+                if (!figureSpans.isEmpty()) {
+                    List<DocNode> result = new ArrayList<>();
+                    for (Element figure : figureSpans) {
+                        Element img = figure.selectFirst("img");
+                        if (img != null) {
+                            String src = extractImageUrl(img);
+                            String alt = img.attr("alt");
+                            if (!src.isBlank()) {
+                                int[] dims = parseImgDims(img);
+                                result.add(new ImageNode(src, alt, null, dims[0], dims[1]));
+                            }
+                        }
+                        Element cap = figure.selectFirst(".figcaption");
+                        if (cap != null && !cap.text().isBlank()) {
+                            result.add(new CaptionNode(cap.text().trim()));
+                        }
+                        figure.remove();
+                    }
+                    // Remaining text in the <p> (outside figures) becomes a paragraph
+                    List<DocNode> rest = parseInlineChildren(el);
+                    if (!rest.isEmpty()) {
+                        result.add(new ParagraphNode(rest));
+                    }
+                    if (!result.isEmpty()) {
+                        yield result;
+                    }
+                }
                 // mcmod.cn encodes section headings as <span class="common-text-title
                 // common-text-title-N">…</span> inside a <p> — the site's real heading
                 // hierarchy (N = level). Emit the heading, and any remaining body text
@@ -553,7 +583,32 @@ public class McmodParser {
                         children.set(0, new TextNode(text.substring(i)));
                     }
                 }
-                yield java.util.List.of(new ParagraphNode(children, indent));
+                // Text alignment (CSS text-align): center/right are kept, left is default
+                ParagraphNode.Align align = ParagraphNode.Align.NONE;
+                String ta = extractTextAlign(el.attr("style"));
+                if ("center".equalsIgnoreCase(ta)) {
+                    align = ParagraphNode.Align.CENTER;
+                } else if ("right".equalsIgnoreCase(ta)) {
+                    align = ParagraphNode.Align.RIGHT;
+                }
+                yield java.util.List.of(new ParagraphNode(children, indent, align));
+            }
+            case "fieldset" -> {
+                // GT-style "资料块": <fieldset><legend>标题</legend>内容…</fieldset>.
+                // Render the legend as a sub-heading, then the body content.
+                List<DocNode> result = new ArrayList<>();
+                Element legend = el.selectFirst("legend");
+                if (legend != null) {
+                    String title = legend.text().trim();
+                    if (!title.isBlank()) {
+                        result.add(new HeadingNode(3, java.util.List.of(new TextNode(title))));
+                    }
+                    legend.remove();
+                }
+                for (Node child : el.childNodesCopy()) {
+                    result.addAll(parseBlockNode(child));
+                }
+                yield result.isEmpty() ? Collections.emptyList() : result;
             }
             case "table" -> {
                 // Check if this table contains only images (gallery table)
@@ -694,6 +749,16 @@ public class McmodParser {
                 String color = extractColor(style);
                 List<DocNode> children = parseInlineChildren(el);
                 if (children.isEmpty()) {
+                    yield Collections.emptyList();
+                }
+                // mcmod image captions are <span class="figcaption">文字</span>. Mark them
+                // so the renderer can style them as small gray centered notes instead of
+                // merging them into body text.
+                if (el.hasClass("figcaption")) {
+                    String caption = el.text().trim();
+                    if (!caption.isBlank()) {
+                        yield java.util.List.of(new CaptionNode(caption));
+                    }
                     yield Collections.emptyList();
                 }
                 if (color == null) {

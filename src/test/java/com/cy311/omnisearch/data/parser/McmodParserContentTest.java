@@ -511,4 +511,31 @@ class McmodParserContentTest {
             .reduce("", String::concat);
         assertTrue(body.contains("后接正文"));
     }
+
+    @Test
+    void paragraphCenterAligned_parsed() {
+        List<DocNode> content = parseContent("<p style=\"text-align: center;\">居中的标题说明</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertEquals(ParagraphNode.Align.CENTER, para.getAlign());
+    }
+
+    @Test
+    void paragraphLeftAligned_default() {
+        List<DocNode> content = parseContent("<p>默认左对齐</p>");
+        ParagraphNode para = (ParagraphNode) content.get(0);
+        assertEquals(ParagraphNode.Align.NONE, para.getAlign());
+    }
+
+    @Test
+    void fieldsetLegend_becomesHeadingThenContent() {
+        List<DocNode> content = parseContent("""
+            <fieldset><legend>资料标题</legend><p>资料正文内容</p></fieldset>
+            """);
+        assertEquals(2, content.size());
+        assertInstanceOf(HeadingNode.class, content.get(0));
+        HeadingNode heading = (HeadingNode) content.get(0);
+        assertEquals(3, heading.getLevel());
+        assertEquals("资料标题", ((TextNode) heading.getChildren().get(0)).getText());
+        assertInstanceOf(ParagraphNode.class, content.get(1));
+    }
 }

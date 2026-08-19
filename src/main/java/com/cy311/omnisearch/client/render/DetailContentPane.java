@@ -14,7 +14,7 @@ import org.jetbrains.annotations.Nullable;
 public final class DetailContentPane {
     private static final int WHEEL_SCROLL_PIXELS = OmniTheme.SCROLL_STEP;
     /** Bump when layout/render code changes so cached layouts are rebuilt (see ensureLayout). */
-    static final int LAYOUT_VERSION = 4;
+    static final int LAYOUT_VERSION = 7;
 
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;

@@ -70,7 +70,11 @@ public class LayoutEngine {
         this.paragraphSpacing = Math.max(2, lh / 3);
         this.headingSpacing = Math.max(2, lh / 3);
         this.imageTopMargin = Math.max(2, lh / 2);
-        this.imageBottomMargin = Math.max(2, lh / 2);
+        // Bottom margin is lh/4: when an image caption follows, the caption adds its own
+        // small top gap, so image→caption stays tight (lh/4 + lh/8 ≈ 0.38lh) while a bare
+        // image→body gap stays readable. Previously lh/2 (+ lh/2 caption gap = a full lh)
+        // pushed captions far below their images.
+        this.imageBottomMargin = Math.max(2, lh / 4);
         this.tablePadding = Math.max(2, lh / 3);
         this.listIndent = Math.max(8, lh * 3 / 2);
     }
@@ -120,6 +124,9 @@ public class LayoutEngine {
         }
         if (node instanceof StyledTextNode stn) {
             return List.of(layoutStyledText(stn));
+        }
+        if (node instanceof CaptionNode cn) {
+            return List.of(layoutCaption(cn));
         }
         if (node instanceof ImageInlineNode iin) {
             return List.of(layoutInlineImage(iin));
@@ -206,7 +213,26 @@ public class LayoutEngine {
         }
 
         List<InlineFragment> fragments = collectInlineFragments(nonImageChildren, null);
-        int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x, currentY, paragraphWidth, firstLineIndent);
+        // Text alignment: mcmod rarely uses text-align, but when it does the line is a
+        // short centered/right line (e.g. captions). Center/right shift the line start.
+        ParagraphNode.Align align = node.getAlign();
+        int alignShift = 0;
+        if (align == ParagraphNode.Align.CENTER || align == ParagraphNode.Align.RIGHT) {
+            int textW = 0;
+            for (InlineFragment f : fragments) {
+                if (f.type == LayoutType.INLINE_IMAGE) {
+                    textW += Math.max(1, metrics.lineHeight() - 1) + 1;
+                } else if (f.text != null) {
+                    textW += metrics.textWidth(f.text);
+                }
+            }
+            if (textW > 0 && textW < paragraphWidth) {
+                alignShift = align == ParagraphNode.Align.CENTER
+                    ? (paragraphWidth - textW) / 2
+                    : (paragraphWidth - textW);
+            }
+        }
+        int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x + alignShift, currentY, paragraphWidth - alignShift, firstLineIndent);
         para.h = usedHeight + paragraphSpacing;
         para.w = paragraphWidth;
 
@@ -219,6 +245,28 @@ public class LayoutEngine {
 
         currentY += para.h;
         return para;
+    }
+
+    private LayoutNode layoutCaption(CaptionNode node) {
+        // Image caption: centered gray line at 80% scale. The image above already carried
+        // its bottom margin (imageBottomMargin), so the caption only adds a tiny top gap
+        // here (lh/8) — image→caption stays tight (≈0.38lh total). The caption then adds
+        // a bottom gap (lh/3) so the following body text doesn't crowd the small note.
+        // Previously the top gap was lh/2, which stacked with the image's bottom margin
+        // into a huge lh gap (the "caption floats far below the image" bug).
+        String text = node.getText();
+        float scale = 0.8f;
+        int textW = (int) (metrics.textWidth(text) * scale);
+        int lh = metrics.lineHeight();
+        int capH = Math.max(1, (int) (lh * scale));
+        int capX = contentX + Math.max(0, (contentWidth - textW) / 2);
+        currentY += Math.max(1, lh / 8);   // tiny gap from the image above
+        LayoutNode cap = new LayoutNode(LayoutType.TEXT, text)
+            .at(capX, currentY, textW, capH);
+        cap.withColor(0xFF777777).withTextScale(scale);
+        currentY += capH;
+        currentY += Math.max(2, lh / 3);   // clear gap to the following body text
+        return cap;
     }
 
     /**

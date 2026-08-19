@@ -238,6 +238,12 @@ public class DocumentRenderer {
                 ? readableColor(node.textColor)
                 : OmniTheme.TEXT_WHITE;
 
+        // Scaled text (image captions): shrink via pose transform so it renders smaller.
+        if (node.textScale != 1.0f && node.textScale > 0f) {
+            renderScaledText(node, rx, ry, color);
+            return;
+        }
+
         // Build a Component carrying all inline styles. Minecraft's Style renders bold
         // (via glyph widening, works for CJK), italic (oblique; CJK glyphs stay upright,
         // matching vanilla behavior), underline and strikethrough (drawn over any text).
@@ -255,6 +261,25 @@ public class DocumentRenderer {
         if (node.linkUrl != null && linkHovered) {
             gui.hLine(rx, rx + Math.max(0, node.w - 1), ry + font.lineHeight, OmniTheme.TEXT_WHITE);
         }
+    }
+
+    /**
+     * Draws text at a reduced scale (image captions) via pose transform.
+     * <p>
+     * The bitmap font is fixed-size, so a smaller font is a smaller-scaled draw. In
+     * 1.21.1 {@code drawString(..., shadow=false)} renders at full brightness with no
+     * batch-shadow offset (verified in {@code Font.StringRenderOutput}: dropShadow=false
+     * sets dimFactor=1.0), so drawing at (0,0) inside the scaled frame is crisp and
+     * correctly positioned.
+     */
+    private void renderScaledText(LayoutNode node, int rx, int ry, int color) {
+        float s = node.textScale;
+        var pose = gui.pose();
+        pose.pushPose();
+        pose.translate(rx, ry, 0);
+        pose.scale(s, s, 1);
+        gui.drawString(font, node.text, 0, 0, color, false);
+        pose.popPose();
     }
 
     private void renderImageNode(LayoutNode node, int rx, int ry) {

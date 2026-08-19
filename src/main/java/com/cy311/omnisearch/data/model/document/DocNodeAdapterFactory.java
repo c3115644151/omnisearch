@@ -31,6 +31,7 @@ public class DocNodeAdapterFactory implements TypeAdapterFactory {
         register("text", TextNode.class);
         register("styled_text", StyledTextNode.class);
         register("image_inline", ImageInlineNode.class);
+        register("caption", CaptionNode.class);
     }
 
     private static void register(String name, Class<? extends DocNode> clazz) {

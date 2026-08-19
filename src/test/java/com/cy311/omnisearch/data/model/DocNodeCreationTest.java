@@ -233,6 +233,7 @@ class DocNodeCreationTest {
             @Override public String visitText(TextNode node) { return "text"; }
             @Override public String visitStyledText(StyledTextNode node) { return "styled_text"; }
             @Override public String visitImageInline(ImageInlineNode node) { return "image_inline"; }
+            @Override public String visitCaption(CaptionNode node) { return "caption"; }
         });
         assertEquals("text", result);
     }
@@ -250,7 +251,8 @@ class DocNodeCreationTest {
             new SectionNode("s", List.of(new TextNode("c"))),
             new TextNode("t"),
             new StyledTextNode("st", TextStyle.NORMAL),
-            new ImageInlineNode("u", "a")
+            new ImageInlineNode("u", "a"),
+            new CaptionNode("cap")
         );
 
         for (var node : nodes) {
@@ -266,6 +268,7 @@ class DocNodeCreationTest {
                 @Override public String visitText(TextNode n) { return n.getType(); }
                 @Override public String visitStyledText(StyledTextNode n) { return n.getType(); }
                 @Override public String visitImageInline(ImageInlineNode n) { return n.getType(); }
+                @Override public String visitCaption(CaptionNode n) { return n.getType(); }
             });
             assertEquals(node.getType(), result,
                 "visitor should return the correct type for " + node.getClass().getSimpleName());

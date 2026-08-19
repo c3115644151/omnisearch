@@ -24,6 +24,7 @@ public class LayoutNode {
     public boolean isStrikethrough; // for STYLED_TEXT nodes
     public int textColor = -1;      // ARGB color (if set)
     public boolean isHeader;        // for TABLE cells that are headers
+    public float textScale = 1.0f;  // render scale for the text (captions use <1)
     public final List<LayoutNode> children;
     public final List<LayoutNode> inlineChildren;
 
@@ -94,6 +95,11 @@ public class LayoutNode {
 
     public LayoutNode withColor(int color) {
         this.textColor = color;
+        return this;
+    }
+
+    public LayoutNode withTextScale(float scale) {
+        this.textScale = scale;
         return this;
     }
 

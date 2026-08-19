@@ -12,4 +12,5 @@ public interface DocNodeVisitor<T> {
     T visitText(TextNode node);
     T visitStyledText(StyledTextNode node);
     T visitImageInline(ImageInlineNode node);
+    T visitCaption(CaptionNode node);
 }
