@@ -46,3 +46,7 @@ Thumbs.db
 *.local
 
 .trae/
+
+# Internal dev docs & agent config (not part of the published repo)
+docs/
+CLAUDE.md
