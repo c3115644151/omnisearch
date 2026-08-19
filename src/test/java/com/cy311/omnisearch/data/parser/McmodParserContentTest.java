@@ -473,4 +473,42 @@ class McmodParserContentTest {
         ParagraphNode para = (ParagraphNode) content.get(0);
         assertFalse(para.isFirstLineIndent());
     }
+
+    @Test
+    void commonTextTitle_parsedAsHeadingWithLevel() {
+        // mcmod.cn encodes headings as <span class="common-text-title common-text-title-N">
+        // inside <p>; N is the hierarchy level (1 = top section, 2 = subsection)
+        List<DocNode> content = parseContent("""
+            <p><span class="common-text-title common-text-title-1">基础介绍</span></p>
+            <p><span class="common-text-title common-text-title-2">冲撞</span></p>
+            """);
+        assertEquals(2, content.size());
+        assertInstanceOf(HeadingNode.class, content.get(0));
+        HeadingNode h1 = (HeadingNode) content.get(0);
+        assertEquals(1, h1.getLevel());
+        assertEquals("基础介绍", ((TextNode) h1.getChildren().get(0)).getText());
+
+        assertInstanceOf(HeadingNode.class, content.get(1));
+        HeadingNode h2 = (HeadingNode) content.get(1);
+        assertEquals(2, h2.getLevel());
+        assertEquals("冲撞", ((TextNode) h2.getChildren().get(0)).getText());
+    }
+
+    @Test
+    void paragraphWithTitleSpan_headingNotDuplicatedInBody() {
+        // The title span must not ALSO appear as body text — the whole <p> becomes the heading
+        List<DocNode> content = parseContent("<p><span class=\"common-text-title common-text-title-1\">能力</span>后接正文</p>");
+        assertEquals(2, content.size());
+        assertInstanceOf(HeadingNode.class, content.get(0));
+        assertInstanceOf(ParagraphNode.class, content.get(1));
+        // heading text is just the span text
+        HeadingNode h = (HeadingNode) content.get(0);
+        assertEquals("能力", ((TextNode) h.getChildren().get(0)).getText());
+        // paragraph contains the remaining body text
+        String body = ((ParagraphNode) content.get(1)).getChildren().stream()
+            .filter(n -> n instanceof TextNode)
+            .map(n -> ((TextNode) n).getText())
+            .reduce("", String::concat);
+        assertTrue(body.contains("后接正文"));
+    }
 }

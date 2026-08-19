@@ -20,7 +20,9 @@ import java.util.List;
 public class CacheLayer {
     // Cache schema version — increment when parser/layout changes to invalidate old caches
     // v9: ParagraphNode gained firstLineIndent (CSS text-indent + editor typed spaces)
-    static final int CACHE_VERSION = 9;
+    // v10: TableNode gained rowColspans (colspan merged cells)
+    // v11: table layout switched to row-grouped rendering and common-text-title headings
+    static final int CACHE_VERSION = 11;
 
     // TTL configuration (milliseconds)
     private static final long SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000L;   // 7 days

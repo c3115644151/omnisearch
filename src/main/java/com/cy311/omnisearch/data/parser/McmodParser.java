@@ -449,6 +449,22 @@ public class McmodParser {
     // ══════════════════════════════════════════════
 
     /**
+     * Extracts the heading level from a {@code common-text-title} span. mcmod.cn renders
+     * section headings as {@code <span class="common-text-title common-text-title-N">},
+     * where N ∈ {1,2,3} is the hierarchy level (1 = top section, 2 = subsection…).
+     *
+     * @return the level 1-3, or 0 if the class does not encode a valid level
+     */
+    private static int extractTitleLevel(Element span) {
+        String cls = span.className();
+        if (cls == null) return 0;
+        Matcher m = Pattern.compile("common-text-title-(\\d)").matcher(cls);
+        if (!m.find()) return 0;
+        int level = Integer.parseInt(m.group(1));
+        return (level >= 1 && level <= 3) ? level : 0;
+    }
+
+    /**
      * Parses a single block-level node (or text node) into zero or more DocNode.
      */
     private List<DocNode> parseBlockNode(Node node) {
@@ -472,6 +488,30 @@ public class McmodParser {
             case "h5" -> java.util.List.of(new HeadingNode(5, parseInlineChildren(el)));
             case "h6" -> java.util.List.of(new HeadingNode(6, parseInlineChildren(el)));
             case "p" -> {
+                // mcmod.cn encodes section headings as <span class="common-text-title
+                // common-text-title-N">…</span> inside a <p> — the site's real heading
+                // hierarchy (N = level). Emit the heading, and any remaining body text
+                // after the title span as a following paragraph.
+                Element titleSpan = el.selectFirst("span.common-text-title");
+                if (titleSpan != null) {
+                    int level = extractTitleLevel(titleSpan);
+                    if (level > 0) {
+                        String titleText = titleSpan.text().trim();
+                        List<DocNode> result = new ArrayList<>();
+                        if (!titleText.isBlank()) {
+                            result.add(new HeadingNode(level, java.util.List.of(new TextNode(titleText))));
+                        }
+                        // Parse the remaining content (excluding the title span)
+                        titleSpan.remove();
+                        List<DocNode> rest = parseInlineChildren(el);
+                        if (!rest.isEmpty()) {
+                            result.add(new ParagraphNode(rest));
+                        }
+                        if (!result.isEmpty()) {
+                            yield result;
+                        }
+                    }
+                }
                 List<DocNode> children = parseInlineChildren(el);
                 if (children.isEmpty()) {
                     yield Collections.emptyList();
@@ -728,8 +768,10 @@ public class McmodParser {
 
         // Data rows
         List<List<DocNode>> dataRows = new ArrayList<>();
+        List<List<Integer>> rowColspans = new ArrayList<>();
         for (int i = startRow; i < rows.size(); i++) {
             List<DocNode> rowCells = new ArrayList<>();
+            List<Integer> colspans = new ArrayList<>();
             Elements cells = rows.get(i).select("> th, > td");
             if (cells.isEmpty()) {
                 // Row has no th/td directly - try any th/td (nested tables)
@@ -742,13 +784,25 @@ public class McmodParser {
                 }
                 // Wrap multiple inline nodes in a ParagraphNode for cell structure
                 rowCells.add(new ParagraphNode(cellContent));
+                // mcmod.cn uses colspan on merged cells (e.g. "6 点（难度相同）" spanning
+                // all 3 difficulty columns) — capture it so layout can span the cell.
+                int colspan = 1;
+                String cs = cell.attr("colspan");
+                if (!cs.isEmpty()) {
+                    try {
+                        int v = Integer.parseInt(cs.trim());
+                        if (v > 1) colspan = v;
+                    } catch (NumberFormatException ignored) {}
+                }
+                colspans.add(colspan);
             }
             if (!rowCells.isEmpty()) {
                 dataRows.add(rowCells);
+                rowColspans.add(colspans);
             }
         }
 
-        return new TableNode(headers, dataRows);
+        return new TableNode(headers, dataRows, rowColspans);
     }
 
     /**
