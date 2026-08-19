@@ -404,9 +404,10 @@ class DocumentRendererTest {
         assertEquals(2, headerCalls,
             "each header drawn once via Component API");
 
-        // Header background fill (2 header cells)
-        verify(gui, times(2)).fill(anyInt(), anyInt(), anyInt(), anyInt(),
-            eq(0xFF333333));
+        // Header background is painted once for the whole row (not once per cell),
+        // preventing overlapping rectangles and giving the table a coherent header band.
+        verify(gui, atLeastOnce()).fill(anyInt(), anyInt(), anyInt(), anyInt(),
+            eq(0xFF2A2A3E));
     }
 
     @Test
@@ -951,5 +952,29 @@ class DocumentRendererTest {
         var calls = RenderTestUtil.getDrawCalls(gui);
         assertEquals(1, calls.size());
         assertNull(calls.get(0).style(), "plain text should be drawn as a raw String, no style component");
+    }
+
+    // ===========================================================
+    // readableColor — mcmod's dark default text on our dark panel
+    // ===========================================================
+
+    @Test
+    void readableColor_darkGrayMappedToWhite() {
+        // mcmod default body color #333333 (meant for white page) must become white on dark UI
+        assertEquals(0xFFFFFFFF, DocumentRenderer.readableColor(0xFF333333));
+        assertEquals(0xFFFFFFFF, DocumentRenderer.readableColor(0xFF222222));
+    }
+
+    @Test
+    void readableColor_preservesBrightColors() {
+        // Red warnings and other bright emphasis colors are kept
+        assertEquals(0xFFFF0000, DocumentRenderer.readableColor(0xFFFF0000));
+        assertEquals(0xFF5555FF, DocumentRenderer.readableColor(0xFF5555FF));
+    }
+
+    @Test
+    void readableColor_whiteAndNoColorPassThrough() {
+        assertEquals(0xFFFFFFFF, DocumentRenderer.readableColor(0xFFFFFFFF));
+        assertEquals(-1, DocumentRenderer.readableColor(-1));
     }
 }

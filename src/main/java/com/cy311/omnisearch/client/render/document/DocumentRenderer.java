@@ -139,10 +139,14 @@ public class DocumentRenderer {
         }
         if (!node.inlineChildren.isEmpty()) {
             // Heading laid out as wrapped inline fragments - apply heading color
-            // to each child that hasn't had an explicit color set.
+            // to each child that hasn't had an explicit color set. Level-1 headings are
+            // also bolded so the hierarchy reads clearly.
             for (LayoutNode inline : node.inlineChildren) {
                 if (inline.textColor == -1) {
                     inline = inline.withColor(color);
+                }
+                if (node.headingLevel == 1 && !inline.isBold) {
+                    inline = inline.withBold(true);
                 }
                 renderLayoutNode(inline);
             }
@@ -155,12 +159,49 @@ public class DocumentRenderer {
     }
 
     private void renderParagraph(LayoutNode node, int rx, int ry) {
+        if (node.headingLevel >= 3) {
+            // Short heading paragraph (mcmod section titles like "魔弹", "召唤方式"):
+            // emphasize with the section-heading color and bold.
+            int headingColor = OmniTheme.TEXT_HEADING_2;
+            for (LayoutNode inline : node.inlineChildren) {
+                if (inline.textColor == -1) {
+                    inline = inline.withColor(headingColor);
+                }
+                if (!inline.isBold) {
+                    inline = inline.withBold(true);
+                }
+                renderLayoutNode(inline);
+            }
+            return;
+        }
         for (LayoutNode inline : node.inlineChildren) {
             renderLayoutNode(inline);
         }
         for (LayoutNode child : node.children) {
             renderLayoutNode(child);
         }
+    }
+
+    /**
+     * mcmod.cn styles its default body text with a dark gray (e.g. #333333 / rgb(34,34,34))
+     * that is meant for a WHITE page background. On our dark panel that text is nearly
+     * invisible. Colors that are BOTH dark AND nearly achromatic (grayish) are replaced
+     * with white; genuinely colored emphasis (red/orange/blue) is preserved even when dark.
+     */
+    static int readableColor(int argb) {
+        if (argb == -1 || argb == OmniTheme.TEXT_WHITE) return argb;
+        int r = (argb >> 16) & 0xFF;
+        int g = (argb >> 8) & 0xFF;
+        int b = argb & 0xFF;
+        double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        if (lum >= 60) return argb; // bright enough either way
+        // Dark but saturated (a real accent color) → keep it
+        double max = Math.max(r, Math.max(g, b));
+        double min = Math.min(r, Math.min(g, b));
+        double sat = max == 0 ? 0 : (max - min) / max;
+        if (sat > 0.5) return argb;
+        // Dark, desaturated → mcmod's default gray, unreadable on dark → white
+        return OmniTheme.TEXT_WHITE;
     }
 
     private void renderInlineTextNode(LayoutNode node, int rx, int ry) {
@@ -171,7 +212,7 @@ public class DocumentRenderer {
         int color = node.linkUrl != null
             ? (linkHovered ? OmniTheme.TEXT_WHITE : OmniTheme.TEXT_LINK)
             : node.textColor != -1
-                ? node.textColor
+                ? readableColor(node.textColor)
                 : OmniTheme.TEXT_WHITE;
 
         // Build a Component carrying all inline styles. Minecraft's Style renders bold
@@ -361,72 +402,98 @@ public class DocumentRenderer {
     }
 
     private void renderTableNode(LayoutNode node, int rx, int ry) {
-        int headerY = -1;
-        int lastCellY = -1;
-        int rowIdx = 0;
+        if (node.children.isEmpty()) return;
+        OmnisearchMod.LOGGER.info("[DocRenderer] renderTableNode: rows={} firstRowCells={}",
+            node.children.size(),
+            node.children.getFirst().children.size());
 
-        for (int i = 0; i < node.children.size(); i++) {
-            LayoutNode cell = node.children.get(i);
-            int cx = cell.x + paintOffsetX;
-            int cy = cell.y + paintOffsetY;
-            int ch = cell.h; // use actual cell height from layout
-            int color = cell.isHeader ? OmniTheme.TEXT_HEADING_2 : OmniTheme.TEXT_WHITE;
+        int left = node.x + paintOffsetX;
+        int top = node.y + paintOffsetY;
+        int right = left + node.w;
+        int bottom = top + node.h;
+        int pad = 3;
 
-            // Track row index: increment when Y changes (new row)
-            if (headerY < 0) {
-                headerY = cy;
-                lastCellY = cy;
-            } else if (cy != lastCellY) {
-                rowIdx++;
-                lastCellY = cy;
+        // Sheet background — one continuous surface
+        gui.fill(left, top, right, bottom, 0xFF101010);
+
+        for (int r = 0; r < node.children.size(); r++) {
+            LayoutNode row = node.children.get(r);
+            int rowY = row.y + paintOffsetY;
+            int rowH = row.h;
+            boolean isHeader = !row.children.isEmpty() && row.children.getFirst().isHeader;
+
+            // Row background: header band or alternating data rows
+            if (isHeader) {
+                gui.fill(left, rowY, right, rowY + rowH, 0xFF2A2A3E);
+            } else if (r % 2 == 1) {
+                gui.fill(left, rowY, right, rowY + rowH, 0xFF1A1A1A);
             }
 
-            // Background: header gets header bg, data rows alternate
-            if (cell.isHeader) {
-                gui.fill(cx - 2, cy, cx + cell.w + 2, cy + ch, OmniTheme.BG_TABLE_HEADER);
-            } else {
-                if (rowIdx % 2 == 1) {
-                    gui.fill(cx - 2, cy, cx + cell.w + 2, cy + ch, 0xFF222222);
-                }
+            // Row separator
+            if (rowY + rowH < bottom) {
+                gui.hLine(left + 1, right - 1, rowY + rowH, 0xFF3A3A3A);
             }
 
-            // Cell border
-            gui.hLine(cx - 2, cx + cell.w + 2, cy, OmniTheme.BORDER_LIGHT);
-            gui.hLine(cx - 2, cx + cell.w + 2, cy + ch - 1, OmniTheme.BORDER);
+            // Cell content: vertical center, small left padding
+            for (LayoutNode cell : row.children) {
+                int cx = cell.x + paintOffsetX;
+                int cy = cell.y + paintOffsetY;
+                // Data cells use the same white as body text so the table blends with the
+                // page; only headers are tinted gold.
+                int color = cell.isHeader ? OmniTheme.TEXT_HEADING_2 : OmniTheme.TEXT_WHITE;
 
-            // Cell content: block children (images), inline children (icons + text), or plain text fallback
-            if (!cell.children.isEmpty()) {
-                for (LayoutNode child : cell.children) {
-                    renderLayoutNode(child);
+                if (!cell.children.isEmpty()) {
+                    for (LayoutNode child : cell.children) {
+                        renderLayoutNode(child);
+                    }
                 }
-            }
-            if (!cell.inlineChildren.isEmpty()) {
-                for (LayoutNode inline : cell.inlineChildren) {
-                    renderLayoutNode(inline);
-                }
-            } else if (cell.text != null && !cell.text.isEmpty()) {
-                if (cell.isHeader) {
-                    var component = net.minecraft.network.chat.Component.literal(cell.text)
-                        .setStyle(net.minecraft.network.chat.Style.EMPTY.withBold(true));
-                    gui.drawString(font, component, cx, cy + 2, color, false);
-                } else {
-                    gui.drawString(font, cell.text, cx, cy + 2, color, false);
+                if (!cell.inlineChildren.isEmpty()) {
+                    for (LayoutNode inline : cell.inlineChildren) {
+                        renderLayoutNode(inline);
+                    }
+                } else if (cell.text != null && !cell.text.isEmpty()) {
+                    int ty = cy + Math.max(1, (rowH - font.lineHeight) / 2);
+                    gui.drawString(font, cell.text, cx + pad, ty, color, false);
                 }
             }
         }
-        // Borders
-        if (!node.children.isEmpty()) {
-            int tableY = node.y + paintOffsetY;
-            int tableEndY = node.y + node.h + paintOffsetY;
-            LayoutNode first = node.children.getFirst();
-            LayoutNode last = node.children.getLast();
-            int tableX = first.x + paintOffsetX - 2;
-            int tableEndX = last.x + last.w + paintOffsetX + 2;
-            gui.hLine(tableX, tableEndX, tableY, OmniTheme.BORDER);
-            gui.hLine(tableX, tableEndX, tableEndY, OmniTheme.BORDER);
-            gui.vLine(tableX, tableY, tableEndY, OmniTheme.BORDER);
-            gui.vLine(tableEndX, tableY, tableEndY, OmniTheme.BORDER);
+
+        // Vertical column separators. Column boundaries come from the first row's cell
+        // right edges (header defines the grid). Lines are drawn PER ROW: a row that has
+        // a colspan cell spanning across a boundary skips that segment (so the merged cell
+        // isn't cut), but other rows still get their separator there.
+        java.util.List<Integer> colEdges = new java.util.ArrayList<>();
+        LayoutNode gridRow = node.children.getFirst();
+        for (LayoutNode cell : gridRow.children) {
+            int e = cell.x + cell.w + paintOffsetX;
+            if (e > left + 1 && e < right - 1 && !colEdges.contains(e)) {
+                colEdges.add(e);
+            }
         }
+        for (int edge : colEdges) {
+            for (LayoutNode row : node.children) {
+                int rowTop = row.y + paintOffsetY;
+                int rowBottom = rowTop + row.h;
+                boolean coveredInRow = false;
+                for (LayoutNode cell : row.children) {
+                    int cs = cell.x + paintOffsetX;
+                    int ce = cell.x + cell.w + paintOffsetX;
+                    if (cs < edge && ce > edge) { // this cell spans across the boundary
+                        coveredInRow = true;
+                        break;
+                    }
+                }
+                if (!coveredInRow) {
+                    gui.vLine(edge, rowTop, rowBottom, 0xFF3A3A3A);
+                }
+            }
+        }
+
+        // Outer border — clean rectangle
+        gui.hLine(left, right, top, 0xFF555555);
+        gui.hLine(left, right, bottom - 1, 0xFF555555);
+        gui.vLine(left, top, bottom, 0xFF555555);
+        gui.vLine(right - 1, top, bottom, 0xFF555555);
     }
 
     private void renderListNode(LayoutNode node) {

@@ -71,7 +71,7 @@ public class LayoutEngine {
         this.headingSpacing = Math.max(2, lh / 3);
         this.imageTopMargin = Math.max(2, lh / 2);
         this.imageBottomMargin = Math.max(2, lh / 2);
-        this.tablePadding = Math.max(1, lh / 4);
+        this.tablePadding = Math.max(2, lh / 3);
         this.listIndent = Math.max(8, lh * 3 / 2);
     }
 
@@ -147,6 +147,10 @@ public class LayoutEngine {
         heading.y = currentY;
         heading.w = contentWidth;
 
+        // Extra breathing room above top-level headings so the hierarchy reads clearly
+        int extraTop = level == 1 ? Math.max(2, metrics.lineHeight() / 2) : 0;
+        currentY += extraTop;
+
         List<InlineFragment> fragments = collectInlineFragments(node.getChildren(), null);
         int usedHeight = layoutInlineFragmentsIntoParagraph(heading, fragments, contentX, currentY, contentWidth);
         heading.h = Math.max(usedHeight, scaledLineHeight) + headingSpacing;
@@ -205,8 +209,39 @@ public class LayoutEngine {
         int usedHeight = layoutInlineFragmentsIntoParagraph(para, fragments, para.x, currentY, paragraphWidth, firstLineIndent);
         para.h = usedHeight + paragraphSpacing;
         para.w = paragraphWidth;
+
+        // mcmod.cn has no <h1-h6>: section headings are short standalone paragraphs like
+        // "魔弹", "召唤方式". Detect them conservatively so the renderer can give them
+        // heading prominence without changing the document model.
+        if (isHeadingLikeParagraph(node)) {
+            para.withHeadingLevel(3);
+        }
+
         currentY += para.h;
         return para;
+    }
+
+    /**
+     * Conservative "short heading paragraph" detection. Requires: pure text (no inline
+     * markup), ≤ 10 chars, no punctuation, not a "field:" label, not a 【…】 annotation
+     * prefix, and containing at least one CJK or letter character.
+     */
+    private static boolean isHeadingLikeParagraph(ParagraphNode node) {
+        StringBuilder sb = new StringBuilder();
+        for (DocNode child : node.getChildren()) {
+            if (child instanceof TextNode tn) {
+                sb.append(tn.getText());
+            } else {
+                // any inline element (strong/em/link/image) means it's body text
+                return false;
+            }
+        }
+        String text = sb.toString().trim();
+        if (text.isEmpty() || text.length() > 10) return false;
+        if (!text.matches(".*[\\p{IsHan}A-Za-z].*")) return false;
+        if (text.endsWith(":") || text.endsWith("：") || text.endsWith("。") || text.endsWith("；")) return false;
+        if (text.startsWith("【") || text.startsWith("（") || text.startsWith("(")) return false;
+        return true;
     }
 
     private LayoutNode layoutInline(String text, boolean styled) {
@@ -367,43 +402,101 @@ public class LayoutEngine {
                 }
             }
         }
-        int availWidth = contentWidth - tablePadding * (colCount - 1);
         int[] colWidths = new int[colCount];
         int[] colX = new int[colCount];
-        int totalContent = 0;
-        for (int i = 0; i < colCount; i++) totalContent += Math.max(maxContentWidths[i], 20);
-        colX[0] = contentX;
+        // Column widths from content, but a colspan cell's content is split across the
+        // columns it covers so merged cells don't starve their columns. Header text is
+        // weighted (×1.6) so header-driven tables (like difficulty tables) keep readable
+        // columns instead of collapsing to the narrowest label column.
+        int[] contentWidths = new int[colCount];
         for (int i = 0; i < colCount; i++) {
-            colWidths[i] = Math.max(20, (int) ((float) Math.max(maxContentWidths[i], 20) / totalContent * availWidth));
+            int w = maxContentWidths[i];
+            if (headers != null && i < headers.size()) {
+                w = Math.max(w, (int) (metrics.textWidth(headers.get(i)) * 1.6f));
+            }
+            contentWidths[i] = Math.max(w, 24);
+        }
+        if (rows != null) {
+            for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
+                List<DocNode> row = rows.get(rowIdx);
+                int col = 0;
+                for (int i = 0; i < row.size(); i++) {
+                    int colspan = Math.max(1, Math.min(node.getColspan(rowIdx, i), colCount - col));
+                    if (colspan > 1) {
+                        List<DocNode> cellChildren = extractCellChildren(row.get(i));
+                        List<InlineFragment> frags = collectInlineFragments(cellChildren, null);
+                        int w = 0;
+                        for (InlineFragment f : frags) {
+                            w += f.type == LayoutType.INLINE_IMAGE
+                                ? Math.max(1, metrics.lineHeight() - 1) + 1
+                                : metrics.textWidth(f.text != null ? f.text : "");
+                        }
+                        int share = w / colspan;
+                        for (int c = col; c < col + colspan && c < colCount; c++) {
+                            contentWidths[c] = Math.max(contentWidths[c], share);
+                        }
+                    }
+                    col += colspan;
+                }
+            }
+        }
+        int totalContent = 0;
+        for (int i = 0; i < colCount; i++) totalContent += contentWidths[i];
+        // Tables span the full content width (aligned with body text); column widths
+        // stay proportional to content.
+        int tableWidth = contentWidth;
+        colX[0] = 0;
+        for (int i = 0; i < colCount; i++) {
+            colWidths[i] = Math.max(20, (int) ((float) contentWidths[i] / totalContent * tableWidth));
             if (i > 0) colX[i] = colX[i - 1] + colWidths[i - 1] + tablePadding;
         }
+        // Guarantee the last column ends exactly at the table width (integer rounding
+        // otherwise lets the table stick out past the content area / under the scrollbar).
+        colWidths[colCount - 1] = Math.max(20, tableWidth - (colX[colCount - 1] - 0));
 
-        int rowH = metrics.lineHeight() + tablePadding * 2;
-        LayoutNode table = new LayoutNode(LayoutType.TABLE);
-        table.at(contentX, currentY, contentWidth, 0);
+        // Center the table horizontally within the content area so it doesn't hug one
+        // side; column x positions are relative to the table's left edge.
+        int tableLeft = contentX + Math.max(0, (contentWidth - tableWidth) / 2);
+        int tableW = tableWidth;
+        for (int i = 0; i < colCount; i++) {
+            colX[i] += tableLeft;
+        }
+
+        int rowH = metrics.lineHeight() + tablePadding * 2;        LayoutNode table = new LayoutNode(LayoutType.TABLE);
+        table.at(tableLeft, currentY, tableW, 0);
 
         if (headers != null) {
+            LayoutNode headerRow = new LayoutNode(LayoutType.PARAGRAPH);
+            headerRow.at(tableLeft, currentY, tableW, 0);
             if (headers.size() == 1 && colCount > 1) {
                 LayoutNode cell = new LayoutNode(LayoutType.TEXT, headers.get(0)).withIsHeader(true);
-                cell.at(contentX, currentY, contentWidth, rowH);
-                table.add(cell);
+                cell.at(tableLeft, currentY, tableW, rowH);
+                headerRow.add(cell);
             } else {
                 for (int i = 0; i < headers.size() && i < colCount; i++) {
                     LayoutNode cell = new LayoutNode(LayoutType.TEXT, headers.get(i)).withIsHeader(true);
                     cell.at(colX[i], currentY, colWidths[i], rowH);
-                    table.add(cell);
+                    headerRow.add(cell);
                 }
             }
+            headerRow.h = rowH;
+            table.add(headerRow);
             currentY += rowH;
         }
 
         if (rows != null) {
-            for (List<DocNode> row : rows) {
+            for (int rowIdx = 0; rowIdx < rows.size(); rowIdx++) {
+                List<DocNode> row = rows.get(rowIdx);
                 int maxRowH = rowH;
-                boolean singleCell = row.size() == 1 && colCount > 1;
-                int cellCount = singleCell ? 1 : Math.min(row.size(), colCount);
-                LayoutNode[] rowCells = new LayoutNode[cellCount];
-                for (int i = 0; i < cellCount; i++) {
+                // Group this row's cells under a row container so the renderer can paint
+                // the row background once and draw borders at column boundaries only.
+                LayoutNode rowBox = new LayoutNode(LayoutType.PARAGRAPH);
+                rowBox.at(tableLeft, currentY, tableW, 0);
+                // Track the starting column of each cell so colspan cells span the right
+                // columns (mcmod.cn merges cells, e.g. "6 点（难度相同）" spanning 3 cols).
+                int col = 0;
+                for (int i = 0; i < row.size(); i++) {
+                    int colspan = Math.max(1, Math.min(node.getColspan(rowIdx, i), colCount - col));
                     List<DocNode> cellChildren = extractCellChildren(row.get(i));
                     // Extract block-level ImageNodes before collectInlineFragments (which skips them)
                     List<DocNode> imageNodes = new ArrayList<>();
@@ -416,8 +509,8 @@ public class LayoutEngine {
                         }
                     }
                     List<InlineFragment> fragments = collectInlineFragments(nonImageChildren, null);
-                    int cellX = singleCell ? contentX : colX[i];
-                    int cellW = singleCell ? contentWidth : colWidths[i];
+                    int cellX = colX[col];
+                    int cellW = colX[Math.min(col + colspan, colCount) - 1] + colWidths[Math.min(col + colspan, colCount) - 1] - colX[col];
                     LayoutNode cell = new LayoutNode(LayoutType.PARAGRAPH);
                     cell.at(cellX, currentY, cellW, rowH);
                     // Layout block images: lineHeight-based constraints, preserve aspect ratio
@@ -437,21 +530,29 @@ public class LayoutEngine {
                             imgY += iH + 2;
                         }
                     }
-                    int textStartY = imgY > currentY ? imgY : currentY;
+                    // Vertical center the text within the row (rowH is the base row height;
+                    // multi-line content expands the row via maxRowH).
+                    int textStartY = Math.max(currentY, currentY + Math.max(0, (rowH - metrics.lineHeight()) / 2));
+                    if (imgY > currentY) textStartY = imgY;
                     int cellHeight = layoutInlineFragmentsIntoParagraph(cell, fragments, cellX, textStartY, cellW);
                     cellHeight = Math.max(cellHeight, imgY - currentY + tablePadding * 2);
                     cell.h = cellHeight + tablePadding * 2;
                     maxRowH = Math.max(maxRowH, cell.h);
-                    rowCells[i] = cell;
+                    rowBox.add(cell);
+                    col += colspan;
                 }
-                for (LayoutNode rc : rowCells) {
-                    if (rc != null) { rc.h = maxRowH; table.add(rc); }
+                for (LayoutNode cell : rowBox.children) {
+                    cell.h = maxRowH;
                 }
+                rowBox.h = maxRowH;
+                table.add(rowBox);
                 currentY += maxRowH;
             }
         }
 
-        table.h = currentY - table.y + paragraphSpacing;
+        // Table height covers exactly the rows (no trailing paragraph spacing), so the
+        // outer border and separators end flush with the last row.
+        table.h = currentY - table.y;
         currentY += paragraphSpacing;
         return table;
     }

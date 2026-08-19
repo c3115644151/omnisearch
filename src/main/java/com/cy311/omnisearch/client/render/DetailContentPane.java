@@ -13,6 +13,8 @@ import org.jetbrains.annotations.Nullable;
  */
 public final class DetailContentPane {
     private static final int WHEEL_SCROLL_PIXELS = OmniTheme.SCROLL_STEP;
+    /** Bump when layout/render code changes so cached layouts are rebuilt (see ensureLayout). */
+    static final int LAYOUT_VERSION = 4;
 
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;
@@ -181,8 +183,12 @@ public final class DetailContentPane {
         if (state.page() == null) {
             return state;
         }
+        // The layout cache must invalidate when the layout/render code changes, not just
+        // when the page or width changes. Otherwise a long-lived session keeps showing the
+        // old layout after a mod update (this bit us repeatedly during table rework).
         if (state.cachedPageId() != null && state.cachedPageId().equals(state.page().id())
-                && state.cachedWidth() == width && state.cachedLayout() != null) {
+                && state.cachedWidth() == width && state.cachedLayout() != null
+                && state.cachedLayoutVersion() == LAYOUT_VERSION) {
             return state;
         }
         var layout = documentRenderer.prepare(state.page().document(), width);
@@ -200,7 +206,7 @@ public final class DetailContentPane {
             }
             pendingImageUrls = pending;
         }
-        return state.withCachedLayout(state.page().id(), width, layout, layout.extractLinks());
+        return state.withCachedLayout(state.page().id(), width, LAYOUT_VERSION, layout, layout.extractLinks());
     }
 
     private void drawScrollbar(GuiGraphics gui, DetailViewState state, int[] contentArea, int maxScroll) {

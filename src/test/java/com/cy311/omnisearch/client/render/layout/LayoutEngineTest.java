@@ -279,4 +279,89 @@ class LayoutEngineTest {
         assertFalse(paraNode.inlineChildren.isEmpty());
         assertEquals(0, paraNode.inlineChildren.get(0).x);
     }
+
+    // ── Short heading paragraphs (mcmod section titles) ──
+
+    @Test
+    void shortTextParagraph_isMarkedAsHeading() {
+        // mcmod.cn section titles are short standalone paragraphs ("魔弹", "召唤方式")
+        ParagraphNode para = new ParagraphNode(List.of(new TextNode("魔弹")));
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        assertEquals(3, paraNode.headingLevel, "short pure-text paragraph should be heading-marked");
+    }
+
+    @Test
+    void longTextParagraph_notMarkedAsHeading() {
+        ParagraphNode para = new ParagraphNode(List.of(new TextNode("这是一段很长的正文描述内容，绝对不是标题段落。")));
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        assertEquals(0, paraNode.headingLevel);
+    }
+
+    @Test
+    void paragraphWithInlineMarkup_notMarkedAsHeading() {
+        // Body text with emphasis is not a title
+        ParagraphNode para = new ParagraphNode(List.of(new StyledTextNode("重要", TextStyle.BOLD)));
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        assertEquals(0, paraNode.headingLevel);
+    }
+
+    // ── Table natural width ──
+
+    @Test
+    void narrowTable_spansContentWidth() {
+        // Tables span the full content width so they align with body text (a floating
+        // narrow table looks disconnected from the page). Column widths stay content-proportional.
+        TableNode table = new TableNode(
+            List.of("HP", "DMG"),
+            List.of(List.of(new ParagraphNode(List.of(new TextNode("20"))),
+                             new ParagraphNode(List.of(new TextNode("5")))))
+        );
+        Document doc = new Document("t", null, null, List.of(table));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode tableNode = findNodesByType(nodes, LayoutType.TABLE).get(0);
+        assertEquals(WIDTH, tableNode.w, "table should span the full content width");
+        assertEquals(0, tableNode.x);
+    }
+
+    @Test
+    void tableWithColspan_spansMergedColumns() {
+        // mcmod.cn merges cells with colspan (e.g. "6 点（难度相同）" spanning 3 columns).
+        // The merged cell must span the combined column widths; other rows stay aligned.
+        TableNode table = new TableNode(
+            List.of("A", "B", "C"),
+            List.of(
+                List.of(new ParagraphNode(List.of(new TextNode("x"))),
+                        new ParagraphNode(List.of(new TextNode("y"))),
+                        new ParagraphNode(List.of(new TextNode("z")))),
+                // colspan=3 cell spanning all columns
+                List.of(new ParagraphNode(List.of(new TextNode("merged"))))
+            ),
+            List.of(
+                List.of(1, 1, 1),
+                List.of(3)
+            )
+        );
+        Document doc = new Document("t", null, null, List.of(table));
+        LayoutEngine engine = new LayoutEngine(metrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode tableNode = findNodesByType(nodes, LayoutType.TABLE).get(0);
+        // children are row containers: header row, data row, merged row
+        assertEquals(3, tableNode.children.size());
+        LayoutNode mergedRow = tableNode.children.get(2);
+        assertEquals(1, mergedRow.children.size());
+        LayoutNode merged = mergedRow.children.get(0);
+        LayoutNode headerRow = tableNode.children.get(0);
+        assertEquals(headerRow.children.get(0).x, merged.x);
+        assertEquals(tableNode.w, merged.w);
+    }
 }
