@@ -76,15 +76,6 @@
 
 测试套件覆盖解析器（mcmod.cn HTML → 文档模型）、纯 Java 布局引擎、渲染组件、缓存与状态 reducer。
 
-## 文档
-
-深入的设计文档位于 [`docs/`](docs/)：
-- [`01_overview.md`](docs/01_overview.md) — 高层设计
-- [`02_architecture.md`](docs/02_architecture.md) — 模块划分与数据流
-- [`03_data_model.md`](docs/03_data_model.md) — 文档模型
-- [`06_data_source.md`](docs/06_data_source.md) — mcmod.cn 集成
-- [`07_multiversion.md`](docs/07_multiversion.md) — Stonecutter 配置
-
 ## 版本说明
 
 这是原版 Omnisearch（此前为 1.0.x）的**彻底重写**。原版因 mcmod.cn 升级反爬机制而完全失效，2.0.0 从零重建了整条管线（解析器、渲染器、悬停交互、分页加载）。详见 [CHANGELOG.md](CHANGELOG.md)。
