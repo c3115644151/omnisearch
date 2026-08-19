@@ -9,6 +9,7 @@ import com.cy311.omnisearch.data.client.McmodHttpClient;
 import com.cy311.omnisearch.keybinds.KeyBinds;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -133,7 +134,7 @@ public class TooltipEventHandler {
         });
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     @SuppressWarnings("unused")
     public static void onItemTooltip(ItemTooltipEvent event) {
         var mc = Minecraft.getInstance();

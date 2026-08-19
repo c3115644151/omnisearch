@@ -223,7 +223,7 @@ public class LayoutEngine {
                 if (f.type == LayoutType.INLINE_IMAGE) {
                     textW += Math.max(1, metrics.lineHeight() - 1) + 1;
                 } else if (f.text != null) {
-                    textW += metrics.textWidth(f.text);
+                    textW += fragmentTextWidth(f);
                 }
             }
             if (textW > 0 && textW < paragraphWidth) {
@@ -444,7 +444,7 @@ public class LayoutEngine {
                     for (InlineFragment f : fragments) {
                         cellW += f.type == LayoutType.INLINE_IMAGE
                             ? Math.max(1, metrics.lineHeight() - 1) + 1
-                            : metrics.textWidth(f.text != null ? f.text : "");
+                            : fragmentTextWidth(f);
                     }
                     maxContentWidths[i] = Math.max(maxContentWidths[i], cellW);
                 }
@@ -477,7 +477,7 @@ public class LayoutEngine {
                         for (InlineFragment f : frags) {
                             w += f.type == LayoutType.INLINE_IMAGE
                                 ? Math.max(1, metrics.lineHeight() - 1) + 1
-                                : metrics.textWidth(f.text != null ? f.text : "");
+                                : fragmentTextWidth(f);
                         }
                         int share = w / colspan;
                         for (int c = col; c < col + colspan && c < colCount; c++) {
@@ -741,7 +741,7 @@ public class LayoutEngine {
                     // Flush text before \n as a segment
                     if (nlIdx > 0) {
                         String before = remaining.substring(0, nlIdx);
-                        int segWidth = metrics.textWidth(before);
+                        int segWidth = fragmentTextWidth(fragmentWithText(fragment, before));
                         line.add(new PendingInline(fragmentWithText(fragment, before), segWidth, Math.max(1, metrics.lineHeight()), segWidth));
                         lineX += segWidth;
                         lineHeight = Math.max(lineHeight, Math.max(1, metrics.lineHeight()));
@@ -764,7 +764,7 @@ public class LayoutEngine {
                     continue;
                 }
 
-                int fitLength = maxFittingPrefixLength(remaining, Math.max(1, available));
+                int fitLength = maxFittingPrefixLength(remaining, Math.max(1, available), fragment.bold);
                 if (fitLength == 0) {
                     if (!line.isEmpty()) {
                         lineY = flushLine(paragraph, line, lineOriginX, lineY, lineHeight);
@@ -777,7 +777,7 @@ public class LayoutEngine {
                 }
 
                 String segment = remaining.substring(0, fitLength);
-                int segmentWidth = metrics.textWidth(segment);
+                int segmentWidth = fragmentTextWidth(fragmentWithText(fragment, segment));
                 line.add(new PendingInline(fragmentWithText(fragment, segment), segmentWidth, Math.max(1, metrics.lineHeight()), segmentWidth));
                 lineX += segmentWidth;
                 lineHeight = Math.max(lineHeight, Math.max(1, metrics.lineHeight()));
@@ -860,15 +860,35 @@ public class LayoutEngine {
         );
     }
 
-    private int maxFittingPrefixLength(String text, int maxWidth) {
+    /**
+     * Measures the rendered width of a text fragment, honoring its bold flag.
+     * Bold text is wider than regular text (MC widens bold glyphs), so it must be
+     * measured with {@link FontMetrics#boldWidth} or it overflows its wrap boundary.
+     */
+    private int fragmentTextWidth(InlineFragment fragment) {
+        if (fragment.text == null || fragment.text.isEmpty()) {
+            return 0;
+        }
+        return fragment.bold ? metrics.boldWidth(fragment.text) : metrics.textWidth(fragment.text);
+    }
+
+    private int maxFittingPrefixLength(String text, int maxWidth, boolean bold) {
         if (text.isEmpty()) return 0;
-        if (metrics.textWidth(text) <= maxWidth) return text.length();
+        // Measure with the fragment's actual weight so bold text wraps at the same pixel
+        // boundary it will occupy when rendered (bold glyphs are wider).
+        if (bold) {
+            if (metrics.boldWidth(text) <= maxWidth) return text.length();
+        } else if (metrics.textWidth(text) <= maxWidth) {
+            return text.length();
+        }
         int low = 1;
         int high = text.length();
         int best = 0;
         while (low <= high) {
             int mid = (low + high) >>> 1;
-            int width = metrics.textWidth(text.substring(0, mid));
+            int width = bold
+                ? metrics.boldWidth(text.substring(0, mid))
+                : metrics.textWidth(text.substring(0, mid));
             if (width <= maxWidth) {
                 best = mid;
                 low = mid + 1;

@@ -106,6 +106,30 @@ class ResultListWidgetTest {
     }
 
     @Test
+    void render_highlightsKeywordInName() {
+        // "巫妖" appears inside names; matched chars must draw in the highlight accent.
+        List<SearchHit> hits = List.of(
+            new SearchHit("item/1", "巫妖塔", "item", "暮色森林", null),
+            new SearchHit("item/2", "暗夜巫妖", "item", "祸乱鬼魅", null),
+            new SearchHit("item/3", "巫妖法杖", "item", "暮色森林", null)
+        );
+        widget.render(gui, 10, 20, 200, 300, hits, -1, 0, 0, 0, CONTENT_RIGHT_X, "巫妖");
+
+        // Matched keyword must be drawn with the highlight color
+        verify(gui, atLeastOnce()).drawString(any(), eq("巫妖"), anyInt(), anyInt(), eq(OmniTheme.TEXT_HEADING_2), anyBoolean());
+    }
+
+    @Test
+    void render_noHighlightWhenKeywordNullOrEmpty() {
+        List<SearchHit> hits = List.of(new SearchHit("item/1", "巫妖塔", "item", "暮色森林", null));
+        widget.render(gui, 10, 20, 200, 300, hits, -1, 0, 0, 0, CONTENT_RIGHT_X, "");
+
+        // Whole name drawn in white, no accent-colored fragment
+        verify(gui, atLeastOnce()).drawString(any(), eq("巫妖塔"), anyInt(), anyInt(), eq(OmniTheme.TEXT_WHITE), anyBoolean());
+        verify(gui, never()).drawString(any(), anyString(), anyInt(), anyInt(), eq(OmniTheme.TEXT_HEADING_2), anyBoolean());
+    }
+
+    @Test
     void render_truncatesSourceModWhenTooLong() {
         // Long source mod should be truncated, not the item name
         List<SearchHit> catResults = List.of(

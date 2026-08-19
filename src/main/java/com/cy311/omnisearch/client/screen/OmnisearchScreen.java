@@ -59,7 +59,11 @@ public class OmnisearchScreen extends Screen {
     private final String initialQuery;
     @Nullable
     private final String initialModFilter;
-    private final boolean preferDirectHoverResolution;
+    // Only the FIRST hover-driven search auto-opens the matching item's detail page.
+    // Once it fires (or the user edits the query), later searches behave like a normal
+    // search and stay on the results list — so clearing the mod filter / searching a new
+    // name after a hover open shows the full list instead of jumping into another page.
+    private boolean preferDirectHoverResolution;
 
     public OmnisearchScreen(SearchRepository repo, java.util.function.Function<String, byte[]> imageDownloader) {
         this(repo, imageDownloader, null, null);
@@ -180,7 +184,9 @@ public class OmnisearchScreen extends Screen {
             return;
         }
         String text = ellipsize(message, Math.max(10, statusBounds[2] - OmniTheme.PADDING * 2));
-        int textY = statusBounds[1] + Math.max(0, (statusBounds[3] - font.lineHeight) / 2);
+        // +1: the bitmap font's glyphs sit slightly high within their line box, so the
+        // status line reads visually centered only with a 1px downward nudge.
+        int textY = statusBounds[1] + Math.max(0, (statusBounds[3] - font.lineHeight) / 2) + 1;
         g.drawString(font, text, statusBounds[0] + OmniTheme.PADDING, textY, color, false);
     }
 
@@ -591,6 +597,10 @@ public class OmnisearchScreen extends Screen {
                         uiState.search().modFilter(),
                         true
                     );
+                    // One-shot: after this first hover search, subsequent searches must stay
+                    // on the results list (the user may clear the mod filter or type a new
+                    // keyword, and should see the full paged list, not an auto-opened page).
+                    preferDirectHoverResolution = false;
                     if (bestIdx >= 0) {
                         loadDetail(bestIdx);
                     }
@@ -868,20 +878,40 @@ public class OmnisearchScreen extends Screen {
         }
         List<SearchHit> filtered = new ArrayList<>();
         for (SearchHit hit : hits) {
-            if (modNameMatches(hit.sourceMod(), modFilter)) {
+            if (modNameMatches(hit, modFilter)) {
                 filtered.add(hit);
             }
         }
         return filtered;
     }
 
-    private static boolean modNameMatches(@Nullable String sourceMod, @Nullable String modFilter) {
-        if (sourceMod == null || sourceMod.isBlank() || modFilter == null || modFilter.isBlank()) {
+    private static boolean modNameMatches(@Nullable SearchHit hit, @Nullable String modFilter) {
+        if (hit == null || modFilter == null || modFilter.isBlank()) {
             return false;
         }
-        String normalizedSource = normalizeLookupText(sourceMod);
         String normalizedFilter = normalizeLookupText(modFilter);
-        return normalizedSource.contains(normalizedFilter) || normalizedFilter.contains(normalizedSource);
+        if (normalizedFilter.isEmpty()) {
+            return false;
+        }
+        // Match either the displayed (Chinese) sourceMod or the English mod name captured
+        // at parse time. A hovered item's mod is resolved to its English display name
+        // (e.g. "Aquaculture 2"), while mcmod.cn's search results carry the Chinese mod
+        // name ("水产业2/水产品2"); matching both is what lets hover scoping actually work.
+        String sourceMod = hit.sourceMod();
+        if (sourceMod != null && !sourceMod.isBlank()) {
+            String normalizedSource = normalizeLookupText(sourceMod);
+            if (normalizedSource.contains(normalizedFilter) || normalizedFilter.contains(normalizedSource)) {
+                return true;
+            }
+        }
+        String modEnName = hit.modEnName();
+        if (modEnName != null && !modEnName.isBlank()) {
+            String normalizedEn = normalizeLookupText(modEnName);
+            if (normalizedEn.contains(normalizedFilter) || normalizedFilter.contains(normalizedEn)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String normalizeLookupText(@Nullable String value) {

@@ -60,7 +60,7 @@ class DetailContentPaneTest {
         assertTrue(back.goBack());
         assertNull(back.openUrl());
 
-        int titleX = 100 + 4 + 14 + 4;
+        int titleX = 100 + 4 + 6 + 2;
         int titleY = 40 + (18 - font.lineHeight) / 2;
         var title = pane.handleClick(state, 100, 40, 320, 220, titleX + 5, titleY + 1);
         assertTrue(title.handled());

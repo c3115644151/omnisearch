@@ -22,6 +22,10 @@ class DetailPanelWidgetTest {
     private static final int HEADER_HEIGHT = 18;
     private static final int BACK_BUTTON_SIZE = 14;
     private static final int PADDING = 4;
+    // Title sits right after the actual "←" glyph (1 char × 6px in the test font) plus a
+    // small gap, so the header reads as one unit instead of leaving a hole next to the arrow.
+    private static final int ARROW_GLYPH_WIDTH = 6;
+    private static final int TITLE_GAP = 2;
 
     private final Font font = createMockFont();
     private final GuiGraphics gui = createMockGuiGraphics();
@@ -66,7 +70,7 @@ class DetailPanelWidgetTest {
         widget.render(gui, 0, 0, 400, 300, page);
 
         int backX = PADDING;
-        int titleX = backX + BACK_BUTTON_SIZE + PADDING;
+        int titleX = backX + ARROW_GLYPH_WIDTH + TITLE_GAP;
         int titleY = (HEADER_HEIGHT - font.lineHeight) / 2 + 1;
         verify(gui).drawString(font, "娜迦鳞片", titleX, titleY, TITLE_COLOR, false);
     }
@@ -174,7 +178,7 @@ class DetailPanelWidgetTest {
         wrapWidget.render(wrapGui, 0, 0, 400, 300, longTitlePage);
 
         int backX = PADDING;
-        int titleX = backX + BACK_BUTTON_SIZE + PADDING;
+        int titleX = backX + ARROW_GLYPH_WIDTH + TITLE_GAP;
         int titleY = (HEADER_HEIGHT - wrapFont.lineHeight) / 2 + 1;
 
         // Verify the drawString was called with a truncated title (containing "...")

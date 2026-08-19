@@ -364,4 +364,74 @@ class LayoutEngineTest {
         assertEquals(headerRow.children.get(0).x, merged.x);
         assertEquals(tableNode.w, merged.w);
     }
+
+    // ── Bold width measurement (regression: bold text used to overflow) ──
+
+    @Test
+    void boldText_wrapsBeforeOverflow() {
+        // Bold glyphs are wider (+1px/char in the bold measurer). Wrapping must use the
+        // bold width or the last chunk overflows the container (mcmod.cn "注:…" bug).
+        // Each char = 6px regular, 7px bold. WIDTH=200 fits ~28 regular / ~24 bold chars.
+        FontMetrics boldMetrics = new FontMetrics(
+            LINE_HEIGHT,
+            text -> text != null ? text.length() * PX_PER_CHAR : 0,
+            text -> text != null ? text.length() * (PX_PER_CHAR + 1) : 0
+        );
+
+        StyledTextNode bold = new StyledTextNode("这是粗体文字，长度较长需要在容器内正确换行，不能超出边界",
+            new TextStyle(true, false, false, false, null));
+        ParagraphNode para = new ParagraphNode(List.of(bold));
+        Document doc = new Document("t", null, null, List.of(para));
+
+        LayoutEngine engine = new LayoutEngine(boldMetrics, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+
+        assertFalse(paraNode.inlineChildren.isEmpty());
+        // Every inline chunk must sit fully inside [0, WIDTH] — no overflow past the edge.
+        for (LayoutNode chunk : paraNode.inlineChildren) {
+            int right = chunk.x + chunk.w;
+            assertTrue(right <= WIDTH,
+                "bold chunk overflows: x=" + chunk.x + " w=" + chunk.w + " right=" + right
+                    + " (WIDTH=" + WIDTH + "), text='" + chunk.text + "'");
+        }
+    }
+
+    @Test
+    void boldText_wrapsEarlierThanRegularText() {
+        // With the same container, bold (wider) text must produce more lines than regular.
+        FontMetrics boldMetrics = new FontMetrics(
+            LINE_HEIGHT,
+            text -> text != null ? text.length() * PX_PER_CHAR : 0,
+            text -> text != null ? text.length() * (PX_PER_CHAR + 1) : 0
+        );
+
+        // 34 chars: regular=34*6=204px > 200 (1 overflow), bold=34*7=238px (2 lines).
+        String text = "这段文字会被折成多行因为内容确实比较长需要足够的长度来验证换行行为";
+        StyledTextNode bold = new StyledTextNode(text, new TextStyle(true, false, false, false, null));
+        TextNode regular = new TextNode(text);
+
+        int boldLines = countParagraphLines(boldMetrics, regularPara(bold));
+        int regularLines = countParagraphLines(boldMetrics, regularPara(regular));
+
+        assertTrue(boldLines > regularLines,
+            "bold should wrap into more lines than regular: bold=" + boldLines + " regular=" + regularLines);
+    }
+
+    private ParagraphNode regularPara(DocNode child) {
+        return new ParagraphNode(List.of(child));
+    }
+
+    private int countParagraphLines(FontMetrics m, ParagraphNode para) {
+        Document doc = new Document("t", null, null, List.of(para));
+        LayoutEngine engine = new LayoutEngine(m, 0, 0, WIDTH);
+        List<LayoutNode> nodes = engine.layout(doc);
+        LayoutNode paraNode = findNodesByType(nodes, LayoutType.PARAGRAPH).get(0);
+        // Count distinct Y positions (one per wrapped line)
+        java.util.Set<Integer> ys = new java.util.HashSet<>();
+        for (LayoutNode chunk : paraNode.inlineChildren) {
+            ys.add(chunk.y);
+        }
+        return Math.max(1, ys.size());
+    }
 }

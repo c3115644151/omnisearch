@@ -24,7 +24,9 @@ public class CacheLayer {
     // v11: table layout switched to row-grouped rendering and common-text-title headings
     // v12: ParagraphNode gained align; fieldset/legend parsing
     // v13: span.figure image+caption extraction (CaptionNode)
-    static final int CACHE_VERSION = 13;
+    // v14: item icon prefers .item-info-table header cell (avoids .common-imglist gallery)
+    // v15: SearchHit gained modEnName (English mod name) for hover mod scoping
+    static final int CACHE_VERSION = 15;
 
     // TTL configuration (milliseconds)
     private static final long SEARCH_TTL_MS = 7 * 24 * 60 * 60 * 1000L;   // 7 days

@@ -14,7 +14,7 @@ import org.jetbrains.annotations.Nullable;
 public final class DetailContentPane {
     private static final int WHEEL_SCROLL_PIXELS = OmniTheme.SCROLL_STEP;
     /** Bump when layout/render code changes so cached layouts are rebuilt (see ensureLayout). */
-    static final int LAYOUT_VERSION = 7;
+    static final int LAYOUT_VERSION = 8;
 
     private final DetailPanelWidget panelWidget;
     private final DocumentRenderer documentRenderer;
@@ -100,7 +100,10 @@ public final class DetailContentPane {
         int[] contentArea = panelWidget.getContentAreaBounds(x, y, width, height);
         int backX = x + OmniTheme.PADDING;
         int backY = y + (OmniTheme.HEADER_HEIGHT - OmniTheme.BACK_BUTTON_SIZE) / 2;
-        if (mx >= backX && mx <= backX + OmniTheme.BACK_BUTTON_SIZE && my >= backY && my <= backY + OmniTheme.BACK_BUTTON_SIZE) {
+        // Back arrow click box spans just the arrow glyph (font width) so it never overlaps
+        // the title that now starts immediately after the glyph.
+        int backHitW = Math.max(1, panelWidget.getBackGlyphWidth());
+        if (mx >= backX && mx <= backX + backHitW && my >= backY && my <= backY + OmniTheme.BACK_BUTTON_SIZE) {
             return new ClickResult(true, true, null, state.withDraggingScrollbar(false));
         }
         if (panelWidget.getTitleUrl() != null) {

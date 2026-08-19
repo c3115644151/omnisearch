@@ -61,7 +61,14 @@ public class DocumentRenderer {
     public DocumentRenderer(Font font, @Nullable ImageManager imageManager) {
         this.font = font;
         this.imageManager = imageManager;
-        this.metrics = new FontMetrics(Math.max(1, font.lineHeight), font::width);
+        // Bold measurement uses a styled Component so MC's width() accounts for the bold
+        // glyph widening; plain font::width ignores style and under-measures bold text,
+        // causing wrapped bold text to overflow its box (a real mcmod.cn "注:…" bug).
+        this.metrics = new FontMetrics(
+            Math.max(1, font.lineHeight),
+            font::width,
+            text -> font.width(Component.literal(text).withStyle(style -> style.withBold(true)))
+        );
     }
 
     /**

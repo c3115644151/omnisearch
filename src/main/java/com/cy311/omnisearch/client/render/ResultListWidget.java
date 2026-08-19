@@ -27,6 +27,14 @@ public class ResultListWidget {
     public int render(GuiGraphics gui, int x, int y, int width, int height,
                       List<SearchHit> results, int selectedIndex, int scrollOffset,
                       int mouseX, int mouseY, int contentRightX) {
+        return render(gui, x, y, width, height, results, selectedIndex, scrollOffset,
+            mouseX, mouseY, contentRightX, null);
+    }
+
+    public int render(GuiGraphics gui, int x, int y, int width, int height,
+                      List<SearchHit> results, int selectedIndex, int scrollOffset,
+                      int mouseX, int mouseY, int contentRightX,
+                      @org.jetbrains.annotations.Nullable String highlight) {
 
         gui.fill(x, y, x + width, y + height, OmniTheme.BG_DARK);
 
@@ -109,6 +117,7 @@ public class ResultListWidget {
 
             // Name (after tag, white) - takes all remaining space before source mod
             String name = hit.name();
+            String nameForHighlight = name;
             int nameAreaEnd = rightEdge - (sourceWidth > 0 ? sourceWidth + 6 : 0);
             int nameMaxWidth = nameAreaEnd - textX;
             boolean nameTruncated = false;
@@ -118,7 +127,13 @@ public class ResultListWidget {
                 nameTruncated = true;
             }
             if (nameMaxWidth > 0) {
-                gui.drawString(font, name, nameDrawX, textY, OmniTheme.TEXT_WHITE, false);
+                // Highlight occurrences of the search keyword in the item name. Matched
+                // characters get an accent color so "巫妖" stands out across all hits.
+                if (highlight != null && !highlight.isBlank() && font.width(name) > 0) {
+                    drawHighlightedText(gui, name, nameDrawX, textY, highlight);
+                } else {
+                    gui.drawString(font, name, nameDrawX, textY, OmniTheme.TEXT_WHITE, false);
+                }
             }
 
             // Track hovered truncated name for tooltip
@@ -171,6 +186,48 @@ public class ResultListWidget {
         int relativeY = mouseY - listY - 1;
         if (relativeY < 0) return -1;
         return relativeY / OmniTheme.LIST_ITEM_HEIGHT + scrollOffset;
+    }
+
+    /**
+     * Draws {@code text} starting at (x, y), coloring every case-insensitive occurrence
+     * of {@code keyword} with the highlight accent and the rest white. Uses plain substring
+     * matching (indexOf on the lowercased copy) so CJK and Latin keywords both work.
+     */
+    private void drawHighlightedText(GuiGraphics gui, String text, int x, int y, String keyword) {
+        if (text.isEmpty()) {
+            return;
+        }
+        String lowerText = text.toLowerCase(java.util.Locale.ROOT);
+        String lowerKeyword = keyword.toLowerCase(java.util.Locale.ROOT);
+        if (lowerKeyword.isEmpty()) {
+            gui.drawString(font, text, x, y, OmniTheme.TEXT_WHITE, false);
+            return;
+        }
+
+        int cursorX = x;
+        int searchFrom = 0;
+        while (searchFrom < text.length()) {
+            int matchIdx = lowerText.indexOf(lowerKeyword, searchFrom);
+            if (matchIdx < 0) {
+                // Remaining text is all non-matching
+                if (searchFrom < text.length()) {
+                    String tail = text.substring(searchFrom);
+                    gui.drawString(font, tail, cursorX, y, OmniTheme.TEXT_WHITE, false);
+                }
+                return;
+            }
+            // Plain segment before the match
+            if (matchIdx > searchFrom) {
+                String before = text.substring(searchFrom, matchIdx);
+                gui.drawString(font, before, cursorX, y, OmniTheme.TEXT_WHITE, false);
+                cursorX += font.width(before);
+            }
+            // The matched keyword in accent color
+            String matched = text.substring(matchIdx, matchIdx + keyword.length());
+            gui.drawString(font, matched, cursorX, y, OmniTheme.TEXT_HEADING_2, false);
+            cursorX += font.width(matched);
+            searchFrom = matchIdx + keyword.length();
+        }
     }
 
     /**

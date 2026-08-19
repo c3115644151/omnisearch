@@ -34,7 +34,8 @@ public final class SearchResultsPane {
             state.resultsScrollOffset(),
             mouseX,
             mouseY,
-            x + width - OmniTheme.SCROLLBAR_WIDTH
+            x + width - OmniTheme.SCROLLBAR_WIDTH,
+            state.query().text()
         );
 
         // Loading indicator at bottom of list when fetching next page

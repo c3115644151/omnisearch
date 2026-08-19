@@ -39,6 +39,11 @@ public class DetailPanelWidget {
     @org.jetbrains.annotations.Nullable
     public String getTitleUrl() { return titleUrl; }
 
+    /** Width of the "←" glyph, for hit-testing the back button in DetailContentPane. */
+    public int getBackGlyphWidth() {
+        return Math.max(1, font.width("←"));
+    }
+
     @org.jetbrains.annotations.Nullable
     public int[] getTagClickTarget() {
         if (tagUrl == null) return null;
@@ -75,8 +80,12 @@ public class DetailPanelWidget {
                 && mouseY >= backY && mouseY <= backY + font.lineHeight;
         gui.drawString(font, "\u2190", backX, backY, backHovered ? OmniTheme.TEXT_WHITE : OmniTheme.TEXT_HEADING_1, false);
 
-        // Title + source mod
-        int titleX = backX + OmniTheme.BACK_BUTTON_SIZE + OmniTheme.PADDING;
+        // Title + source mod. Title sits immediately after the actual arrow glyph (not after
+        // the full BACK_BUTTON_SIZE click box) so the header reads as one unit \u2014 the arrow
+        // is ~9px wide while the click box is 14px, and the old gap left a visible hole.
+        // maxTitleWidth derives from titleX, so the ellipsis auto-truncation still tracks it.
+        int arrowW = Math.max(1, font.width("\u2190"));
+        int titleX = backX + arrowW + OmniTheme.PADDING_SMALL;
         int titleY = y + (OmniTheme.HEADER_HEIGHT - font.lineHeight) / 2 + 1;
 
         String title = page.title();

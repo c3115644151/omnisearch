@@ -163,11 +163,23 @@ public class McmodParser {
 
             // Strip English names in parentheses for cleaner display
             name = PAREN_ENGLISH.matcher(name).replaceAll("").trim();
+            String modEnName = null;
             if (sourceMod != null) {
+                // Keep the English mod name (e.g. "(Aquaculture 2)") before stripping it
+                // from the display string — it's needed to match a hovered item's mod by its
+                // English display name (modid lookup). Without it, a hover on an Aquaculture
+                // item would never scope the search results to that mod (Chinese sourceMod
+                // "水产业2/水产品2" vs English filter "Aquaculture 2" never match).
+                Matcher enModMatcher = PAREN_ENGLISH.matcher(sourceMod);
+                if (enModMatcher.find()) {
+                    String en = enModMatcher.group();
+                    modEnName = en.replaceAll("[\\(\\)]", "").trim();
+                    if (modEnName.isEmpty()) modEnName = null;
+                }
                 sourceMod = PAREN_ENGLISH.matcher(sourceMod).replaceAll("").trim();
             }
 
-            results.add(new SearchHit(id, name, type, sourceMod, category));
+            results.add(new SearchHit(id, name, type, sourceMod, category, modEnName));
         }
 
         if (unmatchedHrefCount > 0) {
@@ -332,7 +344,12 @@ public class McmodParser {
         // ── Step 1: Extract item icon ──
         String iconUrl = null;
         String iconAlt = "";
+        // The item's own icon lives in the item-info-table header cell (128/32 sizes,
+        // alt matches the page title). This is the most reliable signal — the page also
+        // embeds dozens of "related item" icons in .common-imglist which must NOT be
+        // picked up (they are other mods' items; e.g. a kelp page listing snack bags).
         Elements iconImgCandidates = doc.select(
+            ".item-info-table img[src*='/item/icon/'], .item-info-table img[src*='/item_icon/'], " +
             ".item-icon img, .itemicon img, .item-img img, .itempic img, " +
             "div.itemname img, .main-icon img, .icont img, " +
             "a[href*='/item/" + itemId + "'] img"
@@ -348,6 +365,12 @@ public class McmodParser {
         if (iconUrl == null) {
             Elements allImgs = doc.select("img");
             for (Element img : allImgs) {
+                // Skip the "related items" gallery (.common-imglist) — its first icon is
+                // typically a different mod's item and was a common source of wrong covers.
+                Element parent = img.parent();
+                if (parent != null && parent.closest(".common-imglist") != null) {
+                    continue;
+                }
                 String src = extractImageUrl(img);
                 if (src.contains("/item/icon/") || src.contains("/item_icon/")) {
                     iconUrl = src;

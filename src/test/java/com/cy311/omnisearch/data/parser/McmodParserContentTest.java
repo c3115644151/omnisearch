@@ -291,6 +291,50 @@ class McmodParserContentTest {
         assertTrue(doc.content().isEmpty());
     }
 
+    /**
+     * Regression test for wrong item covers. The item's own icon lives in the
+     * .item-info-table header cell; the page also embeds a "related items" gallery
+     * (.common-imglist) whose first icon is a DIFFERENT item. The parser must pick the
+     * header-cell icon, not the first gallery icon.
+     */
+    @Test
+    void itemIcon_prefersItemInfoTable_overCommonImgList() {
+        String html = """
+            <html><body>
+            <div class="itemname"><h5>海藻 (Algae)</h5></div>
+            <div class="item-content common-text font14">
+            <div class="item-info-table">
+              <table>
+                <tbody><tr><td align="center">
+                  <img src="//i.mcmod.cn/item/icon/128x128/6/61919.png?v=6" alt="海藻 (Algae)">
+                </td></tr></tbody>
+              </table>
+            </div>
+            </div>
+            <div class="col-lg-12 center">
+              <div class="common-imglist-block">
+                <div class="content">
+                  <ul class="common-imglist">
+                    <li><p class="img"><a><img src="//i.mcmod.cn/item/icon/32x32/39/391231.png" alt="影院套餐"></a></p></li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            </body></html>
+            """;
+        var doc = parser.parseItemPage(html, "https://www.mcmod.cn/item/61919.html");
+        ImageNode icon = (ImageNode) doc.content().stream()
+            .filter(n -> n instanceof ImageNode)
+            .findFirst().orElse(null);
+        assertNotNull(icon, "should find an icon ImageNode");
+        assertTrue(icon.getUrl().contains("61919"),
+            "icon should be the item's own icon (contains id 61919), was: " + icon.getUrl());
+        assertTrue(icon.getUrl().contains("/item/icon/"),
+            "icon should be an item icon URL, was: " + icon.getUrl());
+        assertFalse(icon.getUrl().contains("391231"),
+            "must NOT pick the related-item gallery icon (影院套餐), was: " + icon.getUrl());
+    }
+
     @Test
     void svgIcon_parsedAsImageInlineNode() {
         List<DocNode> content = parseContent("""
